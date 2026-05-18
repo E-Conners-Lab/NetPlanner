@@ -1,0 +1,28 @@
+# NetPlanner backend dependencies — pinned to exact versions (SEC-30).
+# Regenerate / bump deliberately; review changelogs before upgrading.
+
+# --- Web framework ---
+fastapi==0.115.5
+uvicorn[standard]==0.32.1
+
+# --- Database (async SQLite) ---
+SQLAlchemy==2.0.36
+aiosqlite==0.20.0
+alembic==1.14.0
+greenlet==3.1.1
+
+# --- Validation / settings ---
+pydantic==2.10.3
+pydantic-settings==2.6.1
+python-dotenv==1.0.1
+
+# --- AI layer (Phase 2+) ---
+anthropic==0.40.0
+
+# --- PDF generation (Phase 5) ---
+weasyprint==63.1
+
+# --- Testing ---
+pytest==8.3.4
+pytest-asyncio==0.24.0
+httpx==0.28.1

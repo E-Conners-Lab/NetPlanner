@@ -1,0 +1,42 @@
+# --- Secrets (SEC-12) ---
+.env
+*.pem
+*.key
+id_rsa
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+.venv/
+venv/
+env/
+
+# --- Database (SEC-12: never commit data) ---
+backend/data/*
+!backend/data/.gitkeep
+*.db
+*.sqlite
+*.sqlite3
+
+# --- Node / frontend ---
+node_modules/
+frontend/dist/
+frontend/.vite/
+npm-debug.log*
+
+# --- Editor / OS ---
+.idea/
+.vscode/
+.DS_Store
+
+# --- Build / misc ---
+dist/
+build/
+*.log

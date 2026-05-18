@@ -1,0 +1,45 @@
+[project]
+name = "netplanner"
+version = "0.1.0"
+# Targets 3.12 (PID / Docker base image); the local venv runs 3.13 — both work.
+requires-python = ">=3.12"
+dependencies = []
+
+# Tooling config lives here so `ruff`, `black`, and `isort` produce identical
+# results locally, in CI, and under external review.
+
+[tool.black]
+line-length = 88
+target-version = ["py312"]
+
+[tool.isort]
+profile = "black"
+line_length = 88
+# `app` is the backend's first-party package — keep it in its own import group
+# so isort and ruff's import sorter agree.
+known_first_party = ["app"]
+# env.py imports `app` only after a sys.path insert — order is intentional.
+extend_skip_glob = ["*/alembic/env.py"]
+
+[tool.ruff]
+line-length = 88
+target-version = "py312"
+
+[tool.ruff.lint]
+# pycodestyle, pyflakes, isort, pep8-naming, pyupgrade, bugbear.
+select = ["E", "F", "I", "N", "UP", "B"]
+
+[tool.ruff.lint.isort]
+# Match the standalone isort config so the two import sorters never disagree
+# (notably for test files, which import `app` from outside the package).
+known-first-party = ["app"]
+
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI's dependency-injection idiom requires `Depends()` in arg defaults;
+# B008 is a documented false positive for it.
+extend-immutable-calls = ["fastapi.Depends", "fastapi.Query", "fastapi.Path"]
+
+[tool.ruff.lint.per-file-ignores]
+# alembic/env.py inserts the project root on sys.path before importing `app`,
+# so its import block is intentionally unsorted and after non-import code.
+"*/alembic/env.py" = ["E402", "I001"]

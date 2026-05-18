@@ -1,0 +1,2 @@
+# Keeps the SQLite data directory in version control.
+# The database file itself (netplanner.db) is gitignored.

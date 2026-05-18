@@ -1,0 +1,41 @@
+# NetPlanner — local development stack.
+#
+# `docker compose up` starts:
+#   - backend : FastAPI + uvicorn (auto-reload) on http://localhost:8000
+#   - frontend: Vite dev server on http://localhost:5173
+#
+# For a production build of the frontend, build frontend/Dockerfile
+# (multi-stage Nginx image) instead of using the dev service below.
+
+services:
+  backend:
+    build: ./backend
+    ports:
+      - "8000:8000"
+    env_file:
+      # Optional so `docker compose up` works before `.env` is created.
+      # Phase 2+ (AI layer) requires a real ANTHROPIC_API_KEY here.
+      - path: .env
+        required: false
+    volumes:
+      # Bind-mount source for hot reload; backend/data carries the SQLite file.
+      - ./backend:/app
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    restart: unless-stopped
+
+  frontend:
+    image: node:20-slim
+    working_dir: /app
+    ports:
+      - "5173:5173"
+    environment:
+      # Talk to the backend service over the compose network.
+      - VITE_API_URL=http://localhost:8000/api
+    volumes:
+      - ./frontend:/app
+      # Anonymous volume keeps container node_modules separate from the host.
+      - /app/node_modules
+    command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
+    depends_on:
+      - backend
+    restart: unless-stopped

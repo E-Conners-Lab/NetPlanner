@@ -1,0 +1,213 @@
+# NetPlanner — Build & Operations Runbook
+
+A living document. It exists so that **anyone can reproduce this build from a
+clean machine**, and so the build process — including every issue hit and how
+it was resolved — is captured as it happens.
+
+- **Setup & operations** (Sections 1–5) — how to install, run, and verify.
+- **Build journal** (Section 6) — phase-by-phase log of what was built and
+  every issue encountered and fixed. Appended every phase.
+- **Troubleshooting** (Section 7) — symptom → cause → fix, distilled from the
+  journal.
+
+> Keep this file current. Each phase appends a journal entry; each non-trivial
+> error appends a troubleshooting entry.
+
+---
+
+## 1. What NetPlanner Is
+
+An AI-powered business decision support tool for network engineers — TCO
+models, vendor comparisons, and stakeholder-ready PDF reports. The build
+contract is [`docs/PID.md`](PID.md). The six-phase plan is in the
+[`README`](../README.md); current status: **Phase 1 complete**.
+
+---
+
+## 2. Prerequisites
+
+| Tool | Version | Notes |
+|---|---|---|
+| Python | 3.12+ | 3.13 works; the Docker image pins 3.12-slim |
+| Node.js | 20+ | for the React frontend |
+| Docker + Compose | recent | optional — only for the containerized path |
+| git, gh | any | `gh` only needed to manage the GitHub repo |
+
+A C toolchain plus Pango/Cairo libraries are needed for WeasyPrint (Phase 5).
+The backend Docker image installs them already; for local PDF work on macOS:
+`brew install pango`.
+
+---
+
+## 3. Reproducible Setup
+
+Clone, then choose **one** path.
+
+### 3a. Docker (recommended — one command)
+
+```bash
+cp .env.example .env          # add ANTHROPIC_API_KEY for Phase 2+; empty is fine for Phase 0/1
+docker compose up
+```
+
+- API + docs: <http://localhost:8000/docs>
+- Frontend:   <http://localhost:5173>
+
+The `backend` service runs uvicorn with auto-reload; `frontend` runs the Vite
+dev server. SQLite persists in `backend/data/` (bind-mounted).
+
+### 3b. Local — backend
+
+```bash
+cd backend
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt -r requirements-dev.txt
+alembic upgrade head            # creates backend/data/netplanner.db
+uvicorn app.main:app --reload   # http://localhost:8000
+```
+
+> `requirements-dev.txt` holds the lint/type/security/coverage tooling — needed
+> only to run the quality gate (Section 4), not to run the app.
+
+### 3c. Local — frontend
+
+```bash
+cd frontend
+npm install
+npm run dev                     # http://localhost:5173
+```
+
+The Vite dev server proxies `/api` → `http://localhost:8000`, so run the
+backend alongside it.
+
+---
+
+## 4. Quality Gate
+
+Every section of work must pass this gate before it is considered done. Run it
+incrementally, not just at the end.
+
+### Backend (`cd backend`, venv active)
+
+```bash
+ruff check app tests alembic              # lint
+black --check app tests alembic           # formatting
+isort --check-only app tests alembic      # import order
+mypy app --ignore-missing-imports         # type check
+bandit -r app alembic -ll                 # security (medium+)
+pytest --cov=app --cov-report=term-missing # tests + coverage (target 80%+)
+```
+
+Tooling config: `ruff`/`black`/`isort` in the root `pyproject.toml`,
+coverage in `backend/.coveragerc`, pytest in `backend/pytest.ini`.
+
+### Frontend (`cd frontend`)
+
+```bash
+npm run lint      # ESLint 9 flat config (eslint.config.js)
+npm run build     # production build must succeed
+```
+
+### Database migrations
+
+```bash
+cd backend
+alembic upgrade head        # apply
+alembic downgrade base      # roll back
+alembic check               # verify migrations match the ORM models (no drift)
+```
+
+---
+
+## 5. Project Layout
+
+```
+NetPlanner/
+├── docs/            PID.md (contract), RUNBOOK.md (this file)
+├── backend/         FastAPI app, SQLAlchemy models, agents, routes, tests
+├── frontend/        React + Vite SPA
+├── docker-compose.yml
+└── pyproject.toml   shared Python tooling config
+```
+
+See the `README` for the full tree.
+
+---
+
+## 6. Build Journal
+
+Newest phase last. Each entry: what shipped, then every issue hit and its fix.
+
+### Phase 0 — Project Scaffold
+
+**Shipped:** FastAPI app skeleton (CORS, lifespan, route stubs), async
+SQLAlchemy + SQLite, all ORM models and Pydantic schemas (including the PIS-15
+agent handoff contracts), agent stubs, Alembic with the initial migration, the
+React + Vite frontend shell, Docker Compose, and the test scaffold. The full
+backend + frontend quality gate was established and made green.
+
+**Issues encountered and fixed:**
+
+| # | Issue | Cause | Fix |
+|---|---|---|---|
+| 0.1 | `PID.md` was at the repo root | Expected at `docs/PID.md` by the build spec | Moved it (content unchanged) |
+| 0.2 | `venv/bin/python -m pip` failed — "No module named pip" | The pre-existing venv is uv-managed and ships no pip | Used `uv pip install` |
+| 0.3 | venv is Python 3.13, spec says 3.12 | Pre-existing venv | Set `requires-python = ">=3.12"` — code runs on both; Docker pins 3.12-slim |
+| 0.4 | `docker compose up` would fail before `.env` exists | `env_file: .env` is required by default | Made it `required: false` |
+| 0.5 | Frontend production Dockerfile used `npm ci` with no lockfile | `npm ci` requires a committed `package-lock.json` | Generated and committed the lockfile via `npm install` |
+| 0.6 | `ruff` flagged B008 on `Depends()` in argument defaults | B008 is a known false positive for FastAPI's DI idiom | `extend-immutable-calls = ["fastapi.Depends", ...]` in `pyproject.toml` |
+| 0.7 | `ruff` and `isort` disagreed on import ordering | `isort` did not know `app` was the first-party package | `known_first_party`/`known-first-party = ["app"]` for both |
+| 0.8 | `ruff` UP037 stripped quotes from SQLAlchemy `Mapped["X"]` forward refs | `from __future__ import annotations` makes the quotes redundant to ruff | Verified safe — `configure_mappers()` resolves relationships from the registry; kept the change |
+| 0.9 | `alembic/env.py` import block flagged as unsorted | It imports `app` only after a `sys.path` insert — order is intentional | Per-file ignore for ruff; `extend_skip_glob` for isort |
+| 0.10 | `config.py` had `anthropic_api_key: str = ""` — a silent empty secret | Violates the fail-fast secret rule | Added `require_anthropic_api_key()` accessor that raises if unset; the AI layer must call it |
+| 0.11 | ESLint flagged 14 unused `import React` | Vite's automatic JSX runtime makes the import dead | Removed them (kept `main.jsx`, which uses `React.StrictMode`) |
+| 0.12 | ESLint `react-hooks/exhaustive-deps` on `useStream` | `useCallback` referenced `stop` but omitted it from deps | Moved `stop` above `start` (avoids the temporal dead zone), added it to the dependency array |
+
+### Phase 1 — Projects CRUD + Project Context Agent
+
+**Shipped:** Backend Projects CRUD (`project_service` data layer + 5 REST
+endpoints), the Project Context Agent (ORM → `ProjectContext` handoff
+contract), and the frontend Projects UI (Dashboard with create modal,
+ProjectDetail with edit + delete-confirmation, reusable Modal / ConfirmDialog /
+ProjectForm / ProjectCard, and the project hooks + API layer). Built TDD —
+18 tests written first (RED), then implementation (GREEN). Coverage 89%
+(Phase 1 code 100%). Verified with a live end-to-end CRUD cycle against a real
+uvicorn server.
+
+**Issues encountered and fixed:**
+
+| # | Issue | Cause | Fix |
+|---|---|---|---|
+| 1.1 | Project Context Agent test failed — `None` for string fields | A transient ORM object has no column defaults; they apply only on DB insert | Test constructs a record mirroring a DB row (empty strings, not `None`) |
+| 1.2 | `coverage.py` reported 53% on code the tests clearly exercised | SQLAlchemy's async engine bridges sync/async via greenlet; coverage loses tracing through it | Added `backend/.coveragerc` with `concurrency = greenlet,thread` → true 100% |
+| 1.3 | `ruff` and `isort` disagreed again, on test files only | `ruff` did not treat `app` as first-party from files outside the `app/` package | Added `known-first-party = ["app"]` to ruff's isort settings |
+| 1.4 | `mypy`: handlers annotated `-> ProjectRead` returned ORM `Project` | FastAPI converts via `response_model`; the annotation was inaccurate | Annotated the true return type (`Project`); `response_model=ProjectRead` is the API contract |
+| 1.5 | Frontend delete failure was silently swallowed | `catch {}` closed the dialog without informing the user | Added an `error` prop to `ConfirmDialog`; `ProjectDetail` surfaces the failure and keeps the dialog open for retry |
+
+---
+
+## 7. Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `No module named pip` in the venv | venv is uv-managed | `uv pip install ...`, or recreate with `python -m venv` |
+| `docker compose up` errors on a missing `.env` | — | `cp .env.example .env` (Compose is also set to `required: false`) |
+| `npm ci` fails in the frontend Docker build | `package-lock.json` missing | Ensure the lockfile is committed; run `npm install` to regenerate |
+| Coverage shows 0% / low % on code that tests exercise | coverage not tracking SQLAlchemy's greenlet bridge | `backend/.coveragerc` must set `concurrency = greenlet,thread` |
+| `ruff` and `isort` fight over import order | `app` not recognized as first-party | `known-first-party = ["app"]` in both tool configs |
+| ESLint: `'React' is defined but never used` | Vite's automatic JSX runtime — no `import React` needed | Remove the import; import hooks directly |
+| `alembic check` reports drift | ORM models changed without a migration | `alembic revision --autogenerate -m "..."` |
+
+---
+
+## 8. Roadmap
+
+| Phase | Deliverable | Status |
+|---|---|---|
+| 0 | Project scaffold | ✅ Complete |
+| 1 | Projects CRUD + Project Context Agent | ✅ Complete |
+| 2 | Research Agent + Advisor streaming (core AI layer) | ⬜ Next |
+| 3 | TCO Calculator | ⬜ |
+| 4 | Vendor Comparison | ⬜ |
+| 5 | Report generation (PDF) | ⬜ |
+| 6 | Polish — design, error states, full eval run | ⬜ |
