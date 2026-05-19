@@ -101,6 +101,13 @@ pytest --cov=app --cov-report=term-missing # tests + coverage (target 80%+)
 Tooling config: `ruff`/`black`/`isort` in the root `pyproject.toml`,
 coverage in `backend/.coveragerc`, pytest in `backend/pytest.ini`.
 
+**CI** — `.github/workflows/ci.yml` runs this whole gate on every push to
+`main` and every PR: the backend gate (lint/type/security/tests + migration
+drift), the frontend gate (lint/build), and security scans (`pip-audit`,
+`npm audit`, Semgrep SAST, TruffleHog secret scan). The core gate is
+hard-blocking; the security scans are informational until their baseline is
+triaged (see the file's header comment).
+
 ### Frontend (`cd frontend`)
 
 ```bash
