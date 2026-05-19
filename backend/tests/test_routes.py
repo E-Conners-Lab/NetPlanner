@@ -12,6 +12,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.conversation import Message
+from app.schemas.comparison import ComparisonCell, ComparisonResult
+from app.schemas.research import ResearchResult
 
 
 async def test_eval4_incomplete_tco_input_is_rejected(client: AsyncClient) -> None:
@@ -96,6 +98,64 @@ async def test_tco_preview_surfaces_reasonableness_warning(
 
 async def test_tco_on_missing_project_returns_404(client: AsyncClient) -> None:
     resp = await client.post("/api/projects/missing/tco/preview", json=_TCO_BODY)
+    assert resp.status_code == 404
+
+
+async def test_comparison_generate_and_list(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Generating a comparison saves it and it appears in the list."""
+
+    async def _fake_research(query: str) -> ResearchResult:
+        return ResearchResult(query=query, results=[])
+
+    async def _fake_agent(vendors, criteria, research_data, context):  # noqa: ANN001
+        return ComparisonResult(
+            vendors=vendors,
+            criteria=criteria,
+            matrix={
+                v: {
+                    c: ComparisonCell(value="x", source="", confidence="estimated")
+                    for c in criteria
+                }
+                for v in vendors
+            },
+            summary="Test comparison.",
+        )
+
+    monkeypatch.setattr("app.routes.comparison.research", _fake_research)
+    monkeypatch.setattr("app.routes.comparison.run_comparison_agent", _fake_agent)
+
+    project = (await client.post("/api/projects", json={"name": "Cmp"})).json()
+    body = {
+        "vendors": ["Cisco Meraki", "Juniper Mist"],
+        "criteria": ["licensing model"],
+    }
+
+    resp = await client.post(f"/api/projects/{project['id']}/comparison", json=body)
+    assert resp.status_code == 201
+    assert resp.json()["summary"] == "Test comparison."
+
+    listing = await client.get(f"/api/projects/{project['id']}/comparison")
+    assert len(listing.json()) == 1
+    assert listing.json()[0]["vendors"] == ["Cisco Meraki", "Juniper Mist"]
+
+
+async def test_comparison_rejects_fewer_than_two_vendors(client: AsyncClient) -> None:
+    # PIS-02 #4: a comparison needs 2-3 platforms.
+    project = (await client.post("/api/projects", json={"name": "Cmp"})).json()
+    resp = await client.post(
+        f"/api/projects/{project['id']}/comparison",
+        json={"vendors": ["Only One"], "criteria": ["licensing model"]},
+    )
+    assert resp.status_code == 422
+
+
+async def test_comparison_on_missing_project_returns_404(client: AsyncClient) -> None:
+    resp = await client.post(
+        "/api/projects/missing/comparison",
+        json={"vendors": ["A", "B"], "criteria": ["licensing model"]},
+    )
     assert resp.status_code == 404
 
 

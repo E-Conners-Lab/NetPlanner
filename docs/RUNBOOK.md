@@ -231,6 +231,27 @@ never produce wrong arithmetic. The "agent" boundary is kept for the stable
 | 3.1 | PID Eval 1's stated 5-year total ($198,400) contradicted its own breakdown | The total summed only 4 years of licensing; Year 1 + four recurring years at $19,600 is $218,000 | Corrected to $218,000 via **PID amendment 1.2** (user-confirmed); the calculator and Eval 1 use $218,000 |
 | 3.2 | Vite build warns "chunks larger than 500 kB" | `recharts` is a large dependency, now in the bundle | Advisory only — build still succeeds. Code-splitting is a Phase 6 polish item |
 
+### Phase 4 — Vendor Comparison
+
+**Shipped:** The Comparison Agent (`agents/comparison.py`) — single Sonnet
+call that synthesizes a vendor x criterion matrix from per-vendor research,
+with a guaranteed-complete matrix (any cell the model omits is filled
+`unavailable`, so the matrix is never blank and an unsourced cell is never
+`confirmed`). The comparison persistence service; the route (Research runs per
+vendor in parallel, then the agent synthesizes — PIS-12/PIS-13); and the
+frontend Comparison page (dynamic 2-3 vendor + criteria fields, the matrix
+table with `ConfidenceBadge` per cell, saved comparisons). 67 backend tests,
+94% coverage. Evals 3 and 5 are manual review (PIS-09); Eval 3 was verified
+live.
+
+**Issues encountered and fixed:**
+
+| # | Issue | Cause | Fix |
+|---|---|---|---|
+| 4.1 | Live Eval 3: the matrix generated but every cell was `unavailable` for well-known vendors | The agent prompt forbade *any* value without research backing — so stable facts (Meraki's subscription licensing, Mist's Marvis AI) were dropped too | Prompt now separates **pricing** (research-sourced for `confirmed`, else `estimated`/`unavailable`) from **capability facts** (the model may answer from knowledge, tagged `estimated`). Research query tightened to pricing-focus |
+| 4.2 | Live test first hit a stale backend (Phase-0 comparison stub) | The dev `uvicorn` was started before Phase 4 and does not auto-reload | Restart the server after backend code changes — or run it with `--reload` |
+| 4.3 | The comparison call (~30-60s) would race the axios 30s timeout | Frontend `client.js` has a 30s default | `generateComparison` overrides the timeout to 120s per-request |
+
 ---
 
 ## 7. Troubleshooting
@@ -256,6 +277,6 @@ never produce wrong arithmetic. The "agent" boundary is kept for the stable
 | 1 | Projects CRUD + Project Context Agent | ✅ Complete |
 | 2 | Research Agent + Advisor streaming (core AI layer) | ✅ Complete |
 | 3 | TCO Calculator | ✅ Complete |
-| 4 | Vendor Comparison | ⬜ Next |
-| 5 | Report generation (PDF) | ⬜ |
+| 4 | Vendor Comparison | ✅ Complete |
+| 5 | Report generation (PDF) | ⬜ Next |
 | 6 | Polish — design, error states, full eval run | ⬜ |

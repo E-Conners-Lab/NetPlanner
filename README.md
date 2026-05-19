@@ -127,13 +127,13 @@ NetPlanner/
 | 1     | Projects CRUD (backend routes + frontend UI)              | ✅ Done   |
 | 2     | Research Agent + Advisor with streaming (core AI layer)   | ✅ Done   |
 | 3     | TCO Calculator (form, agent, chart visualization)         | ✅ Done   |
-| 4     | Vendor Comparison (form, agent, matrix UI)                | ⬜ Next   |
-| 5     | Report generation (PDF export via WeasyPrint)             | ⬜        |
+| 4     | Vendor Comparison (form, agent, matrix UI)                | ✅ Done   |
+| 5     | Report generation (PDF export via WeasyPrint)             | ⬜ Next   |
 | 6     | Polish pass — design refinement, error states, eval run   | ⬜        |
 
-**Current status: Phase 3 complete.** Projects CRUD, the AI Advisor, and the
-TCO Calculator are implemented and tested — 56 backend tests at 94% coverage.
-Vendor Comparison and Reports are not yet built.
+**Current status: Phase 4 complete.** Projects CRUD, the AI Advisor, the TCO
+Calculator, and Vendor Comparison are implemented and tested — 67 backend
+tests at 94% coverage. Report generation is not yet built.
 See [`docs/RUNBOOK.md`](docs/RUNBOOK.md) for the full phase-by-phase journal.
 
 ---
