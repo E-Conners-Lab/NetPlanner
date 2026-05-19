@@ -20,7 +20,7 @@ python-dotenv==1.0.1
 anthropic==0.102.0
 
 # --- PDF generation (Phase 5) ---
-weasyprint==63.1
+weasyprint==68.1
 markdown==3.10.2
 
 # --- Testing ---
