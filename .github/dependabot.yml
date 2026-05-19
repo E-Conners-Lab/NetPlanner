@@ -14,13 +14,31 @@ updates:
       frontend:
         patterns: ["*"]
         update-types: ["minor", "patch"]
+    # Frontend major-version upgrades are deliberate, hand-done, tested
+    # tasks — not auto-PRs. Each entry below is a *recorded deferral*, not a
+    # "forgot about it": the upgrade is understood and scheduled, but blocked
+    # on either an ecosystem catch-up or a scoped migration. Revisit and
+    # remove an entry when you do the upgrade by hand.
     ignore:
-      # vite 8 is a Rolldown-based rewrite and @vitejs/plugin-react majors
-      # must be matched to it — major build-tooling upgrades are done by
-      # hand, not by auto-PR.
+      # vite 8 / @vitejs/plugin-react 5 move as a matched set — vite 8 needs
+      # plugin-react 5. We are on vite 7 + plugin-react 4 (the highest
+      # compatible pair). Upgrade both together by hand.
       - dependency-name: "vite"
         update-types: ["version-update:semver-major"]
       - dependency-name: "@vitejs/plugin-react"
+        update-types: ["version-update:semver-major"]
+      # eslint 10 is blocked on eslint-plugin-react publishing a release that
+      # declares eslint 10 in its peer range (PR #20). Revisit when it does.
+      - dependency-name: "eslint"
+        update-types: ["version-update:semver-major"]
+      # eslint-plugin-react-hooks 7 enables the React Compiler rule set,
+      # which flags existing useEffect/setState patterns — adopting it is a
+      # code refactor, scoped separately (PR #9).
+      - dependency-name: "eslint-plugin-react-hooks"
+        update-types: ["version-update:semver-major"]
+      # tailwindcss 4 is an engine rewrite (CSS-first config, new PostCSS
+      # plugin) — a migration with a full visual-QA pass, not a bump (PR #10).
+      - dependency-name: "tailwindcss"
         update-types: ["version-update:semver-major"]
 
   # Backend is uv-managed — Dependabot reads pyproject.toml + uv.lock.
