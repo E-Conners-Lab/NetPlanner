@@ -2,22 +2,22 @@
 # Regenerate / bump deliberately; review changelogs before upgrading.
 
 # --- Web framework ---
-fastapi==0.115.5
-uvicorn[standard]==0.32.1
+fastapi==0.136.1
+uvicorn[standard]==0.47.0
 
 # --- Database (async SQLite) ---
-SQLAlchemy==2.0.36
-aiosqlite==0.20.0
-alembic==1.14.0
-greenlet==3.1.1
+SQLAlchemy==2.0.49
+aiosqlite==0.22.1
+alembic==1.18.4
+greenlet==3.5.0
 
 # --- Validation / settings ---
-pydantic==2.10.3
-pydantic-settings==2.6.1
-python-dotenv==1.0.1
+pydantic==2.13.4
+pydantic-settings==2.14.1
+python-dotenv==1.2.2
 
 # --- AI layer (Phase 2+) ---
-anthropic==0.102.0
+anthropic==0.103.1
 
 # --- PDF generation (Phase 5) ---
 weasyprint==63.1
