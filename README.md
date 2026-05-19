@@ -129,12 +129,14 @@ NetPlanner/
 | 3     | TCO Calculator (form, agent, chart visualization)         | ✅ Done   |
 | 4     | Vendor Comparison (form, agent, matrix UI)                | ✅ Done   |
 | 5     | Report generation (PDF export via WeasyPrint)             | ✅ Done   |
-| 6     | Polish pass — design refinement, error states, eval run   | ⬜ Next   |
+| 6     | Polish pass — design refinement, error states, eval run   | ✅ Done   |
 
-**Current status: Phase 5 complete.** All five feature phases — Projects, the
-AI Advisor, the TCO Calculator, Vendor Comparison, and PDF Reports — are
-implemented and tested (81 backend tests at 95% coverage). Phase 6 is a polish
-pass.
+**Current status: v1 launch-ready.** All six phases are complete — Projects,
+the AI Advisor, the TCO Calculator, Vendor Comparison, PDF Reports, and the
+polish pass. 84 backend tests at 96% coverage, and **all 7 PID eval cases
+pass** (the PIS-10 acceptance gate — 6/7 required, both zero-tolerance evals
+included). See [`docs/RUNBOOK.md`](docs/RUNBOOK.md) for the eval results and
+the full build journal.
 See [`docs/RUNBOOK.md`](docs/RUNBOOK.md) for the full phase-by-phase journal.
 
 ---

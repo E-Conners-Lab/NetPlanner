@@ -168,7 +168,9 @@ export default function TcoResultsPanel({ result, saving, saveError, saved, onSa
 
       <div className="flex flex-col gap-2">
         {saveError && (
-          <p className="text-xs text-red-400">{saveError}</p>
+          <div className="rounded-lg border border-red-500/20 bg-red-500/8 px-4 py-3">
+            <p className="text-sm text-red-400">{saveError}</p>
+          </div>
         )}
 
         {saved ? (

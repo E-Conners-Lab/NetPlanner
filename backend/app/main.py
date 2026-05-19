@@ -10,12 +10,17 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.database import init_db
+from app.middleware import SecurityHeadersMiddleware
 from app.routes import advisor, comparison, projects, reports, tco
 
 settings = get_settings()
 
 # All API routes live under this prefix; the frontend and Nginx proxy `/api`.
 API_PREFIX = "/api"
+
+# Swagger / ReDoc / the raw schema are exposed only outside production —
+# a public API does not advertise its full surface (SEC posture).
+_DEV_DOCS = settings.environment != "production"
 
 
 @asynccontextmanager
@@ -34,7 +39,13 @@ app = FastAPI(
     version="0.1.0",
     description="AI-powered business decision support for network engineers.",
     lifespan=lifespan,
+    docs_url="/docs" if _DEV_DOCS else None,
+    redoc_url="/redoc" if _DEV_DOCS else None,
+    openapi_url="/openapi.json" if _DEV_DOCS else None,
 )
+
+# Hardening headers on every response (SEC-08/10/25).
+app.add_middleware(SecurityHeadersMiddleware)
 
 # CORS — origins are environment-configurable (CORS_ORIGINS); dev default is
 # the Vite dev server. Restricting origins is part of the transport posture.

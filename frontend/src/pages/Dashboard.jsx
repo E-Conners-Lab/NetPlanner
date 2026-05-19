@@ -41,11 +41,15 @@ function EmptyState({ onNew }) {
 /* ── Error state ─────────────────────────────────────────────── */
 function ErrorState({ message, onRetry }) {
   return (
-    <div className="flex flex-col items-center justify-center py-20 gap-4">
-      <p className="text-sm text-red-400">{message}</p>
-      <Button variant="secondary" onClick={onRetry}>
-        Try again
-      </Button>
+    <div className="flex flex-col gap-3">
+      <div className="rounded-lg border border-red-500/20 bg-red-500/8 px-4 py-3">
+        <p className="text-sm text-red-400">{message}</p>
+      </div>
+      <div>
+        <Button variant="secondary" onClick={onRetry}>
+          Try again
+        </Button>
+      </div>
     </div>
   );
 }

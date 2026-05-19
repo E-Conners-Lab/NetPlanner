@@ -130,7 +130,7 @@ export default function Sidebar() {
 
       {/* Footer */}
       <div className="px-4 py-3 border-t border-[var(--border)]">
-        <p className="text-xs text-textMuted">Phase 0 · Skeleton</p>
+        <p className="text-xs text-textMuted">NetPlanner</p>
       </div>
     </aside>
   );

@@ -278,6 +278,32 @@ hallucinate a number.
 | 5.2 | The Reports UI needs to list advisor conversations as selectable artifacts, but no list endpoint existed | Phase 2 only tracked the active conversation client-side | Added `GET /projects/{id}/conversations` + `ConversationSummary` schema |
 | 5.3 | A `422` from the PDF endpoint arrives as an unreadable `Blob` | The frontend requests the response with `responseType: 'blob'`, so error bodies are blobs too | Frontend reads `blob.text()` then `JSON.parse` to recover the `detail` |
 
+### Phase 6 — Polish & launch readiness
+
+**Shipped:** Security hardening — a `SecurityHeadersMiddleware` (X-Content-Type-Options, X-Frame-Options, Referrer-Policy, HSTS) on every API response, a Content-Security-Policy plus headers on the frontend Nginx config, and `/docs` disabled in production; a review of the four AI Engineering Controls (AI-1–4 — all compliant, no fixes needed). An error-state consistency sweep, a design-consistency fix, and a bundle code-split. And the full seven-eval acceptance run.
+
+**Eval run (PID Domain 2 / PIS-10 acceptance gate):**
+
+| Eval | Type | Method | Result |
+|---|---|---|---|
+| 1 — TCO happy path | happy | automated | ✅ pass — $218,000 |
+| 2 — Advisor justification | happy | manual | ✅ pass — CapEx/OpEx, pricing, ROI |
+| 3 — Comparison matrix | happy | manual | ✅ pass — 10/10 cells, confidence tags |
+| 4 — incomplete TCO input | edge (zero-tolerance) | automated | ✅ pass — 422, nothing saved |
+| 5 — pricing unavailable | edge (zero-tolerance) | manual | ✅ pass — obscure vendor → `unavailable` |
+| 6 — anomalous TCO cost | silent-failure | automated | ✅ pass — $6/unit flagged |
+| 7 — vague advisor input | edge | automated | ✅ pass — requests context |
+
+**7 of 7 pass** (PIS-10 requires 6/7; both zero-tolerance evals — 4 and 5 — pass). NetPlanner clears the PID's acceptance gate.
+
+**Issues encountered and fixed:**
+
+| # | Issue | Cause | Fix |
+|---|---|---|---|
+| 6.1 | Eval 2's output did not reliably include explicit CapEx/OpEx framing — a named element of the eval's pass condition | The Advisor prompt asked for "budget narratives" but never named CapEx/OpEx | Added budget-justification guidance to the Advisor system prompt; Eval 2 re-run passes |
+| 6.2 | Four components rendered errors as bare red text, not the app's red-banner style | Inconsistency across sub-components from different phases | Standardized all on the established red-banner error style |
+| 6.3 | Frontend build warned "chunks larger than 500 kB" — a 632 kB monolith | `recharts` + the whole app in one bundle | Vite `manualChunks` splits `vendor-react` / `vendor-recharts`; warning gone |
+
 ---
 
 ## 7. Troubleshooting
@@ -306,4 +332,16 @@ hallucinate a number.
 | 3 | TCO Calculator | ✅ Complete |
 | 4 | Vendor Comparison | ✅ Complete |
 | 5 | Report generation (PDF) | ✅ Complete |
-| 6 | Polish — design, error states, full eval run | ⬜ Next |
+| 6 | Polish — design, error states, full eval run | ✅ Complete |
+
+All six phases complete — NetPlanner v1 is launch-ready (7/7 evals pass).
+
+### Planned enhancements (post-v1)
+
+Scoped but deferred to keep the v1 launch on the PID's defined capabilities.
+Each would land via a PID amendment.
+
+| Item | Description |
+|---|---|
+| Itemized hardware BOM | Replace the flat per-unit hardware cost with a bill-of-materials line-item list — chassis, line cards, SFP/QSFP transceivers, PSUs — so accessory costs are captured. A deterministic calculator change plus a repeatable line-item form. |
+| AI accessory suggestion | Given a device model or category, suggest a draft accessory BOM (line-card and transceiver options with estimated, confidence-tagged pricing) for the user to review and edit before it feeds the TCO. |

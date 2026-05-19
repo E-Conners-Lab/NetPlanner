@@ -52,6 +52,13 @@ alternative or framing the trade-offs.
 When you need current vendor pricing, call the `research` tool — do not \
 invent figures."""
 
+# Budget-justification guidance (Eval 2): a spend justification must frame
+# cost as CapEx vs OpEx, cite a pricing figure, and give an ROI narrative.
+_GUIDANCE = """When the user asks you to justify a purchase or build a budget \
+case, explicitly frame the cost as CapEx (one-time capital outlay) versus \
+OpEx (recurring operating cost), cite specific pricing figures where you have \
+them, and include an ROI or risk-based narrative."""
+
 # PIS-19 — the single tool exposed to the Advisor. Description is unambiguous.
 _RESEARCH_TOOL = {
     "name": "research",
@@ -94,6 +101,7 @@ def _build_system(context: ProjectContext) -> str:
     return (
         f"{ADVISOR_SYSTEM_ANCHOR}\n\n"
         f"{_GUARDRAILS}\n\n"
+        f"{_GUIDANCE}\n\n"
         "<<PROJECT_CONTEXT>>\n"
         f"Project: {context.name}\n"
         f"Company: {context.company or 'not specified'}\n"

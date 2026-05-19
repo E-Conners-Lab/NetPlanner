@@ -84,7 +84,9 @@ export default function ReportHistoryList({ reports, loading, error }) {
       )}
 
       {!loading && error && (
-        <p className="text-sm text-red-400 py-4">{error}</p>
+        <div className="rounded-lg border border-red-500/20 bg-red-500/8 px-4 py-3">
+          <p className="text-sm text-red-400">{error}</p>
+        </div>
       )}
 
       {!loading && !error && reports.length === 0 && <EmptyHistory />}
