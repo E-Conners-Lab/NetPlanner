@@ -316,6 +316,10 @@ hallucinate a number.
 | 6.2 | Four components rendered errors as bare red text, not the app's red-banner style | Inconsistency across sub-components from different phases | Standardized all on the established red-banner error style |
 | 6.3 | Frontend build warned "chunks larger than 500 kB" — a 632 kB monolith | `recharts` + the whole app in one bundle | Vite `manualChunks` splits `vendor-react` / `vendor-recharts`; warning gone |
 
+### Post-launch dependency notes
+
+- **recharts 2 → 3** (commit `db8ca22`, verified 2026-05-19). `TcoChart` (the only recharts component) renders intact under v3 — stacked `BarChart`, axes, grid, legend, and the custom `TcoTooltip` all work without code changes. Verified by rendering the component in headless Chromium with representative 5-year data: 0 console errors, tooltip payload still exposes `entry.fill`/`name`/`value`/`dataKey`, computed total row correct. No follow-up required.
+
 ---
 
 ## 7. Troubleshooting
