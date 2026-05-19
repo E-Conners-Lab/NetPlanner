@@ -14,17 +14,89 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.conversation import Message
 
 
-@pytest.mark.skip(reason="Eval 4 — incomplete TCO input: logic implemented in Phase 3")
-def test_eval4_incomplete_tco_input_is_rejected() -> None:
+async def test_eval4_incomplete_tco_input_is_rejected(client: AsyncClient) -> None:
     """PID Eval 4 — incomplete input edge case.
 
     Input: TCO form submitted with a device count but no hardware cost.
 
-    Expected: the system prompts for the missing data and does NOT generate a
-    model. Pass condition: zero TCO output produced; an error prompt is shown.
-    Zero-tolerance: financial inputs are never silently assumed (PIS-04/PIS-10).
+    Expected: the request is rejected (422) and NO scenario is created —
+    financial inputs are never silently assumed (PIS-04, zero-tolerance
+    PIS-10).
     """
-    raise AssertionError("not implemented")
+    project = (await client.post("/api/projects", json={"name": "TCO Project"})).json()
+
+    resp = await client.post(
+        f"/api/projects/{project['id']}/tco",
+        json={
+            "scenario_name": "Incomplete",
+            "inputs": {"device_count": 200, "licensing_cost_per_unit_year": 98},
+        },
+    )
+
+    assert resp.status_code == 422  # hardware_cost_per_unit is required
+    # Zero TCO output produced — nothing was persisted.
+    listing = await client.get(f"/api/projects/{project['id']}/tco")
+    assert listing.json() == []
+
+
+_TCO_BODY = {
+    "scenario_name": "AP Refresh",
+    "inputs": {
+        "device_count": 200,
+        "hardware_cost_per_unit": 600,
+        "licensing_cost_per_unit_year": 98,
+    },
+}
+
+
+async def test_tco_preview_does_not_persist(client: AsyncClient) -> None:
+    project = (await client.post("/api/projects", json={"name": "Campus"})).json()
+
+    preview = await client.post(
+        f"/api/projects/{project['id']}/tco/preview", json=_TCO_BODY
+    )
+    assert preview.status_code == 200
+    assert preview.json()["total_5yr"] == 218_000
+
+    # Preview computes but never saves.
+    assert (await client.get(f"/api/projects/{project['id']}/tco")).json() == []
+
+
+async def test_tco_save_then_list(client: AsyncClient) -> None:
+    project = (await client.post("/api/projects", json={"name": "Campus"})).json()
+
+    saved = await client.post(f"/api/projects/{project['id']}/tco", json=_TCO_BODY)
+    assert saved.status_code == 201
+    assert saved.json()["total_5yr"] == 218_000
+
+    listing = await client.get(f"/api/projects/{project['id']}/tco")
+    assert len(listing.json()) == 1
+    assert listing.json()[0]["scenario_name"] == "AP Refresh"
+
+
+async def test_tco_preview_surfaces_reasonableness_warning(
+    client: AsyncClient,
+) -> None:
+    project = (await client.post("/api/projects", json={"name": "Anomalous"})).json()
+
+    resp = await client.post(
+        f"/api/projects/{project['id']}/tco/preview",
+        json={
+            "scenario_name": "Typo",
+            "inputs": {
+                "device_count": 200,
+                "hardware_cost_per_unit": 6,
+                "licensing_cost_per_unit_year": 98,
+            },
+        },
+    )
+    assert resp.status_code == 200
+    assert resp.json()["warnings"]  # PIS-21 reasonableness flag
+
+
+async def test_tco_on_missing_project_returns_404(client: AsyncClient) -> None:
+    resp = await client.post("/api/projects/missing/tco/preview", json=_TCO_BODY)
+    assert resp.status_code == 404
 
 
 async def test_eval7_vague_advisor_input_requires_context(client: AsyncClient) -> None:

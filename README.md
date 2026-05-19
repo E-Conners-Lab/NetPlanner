@@ -126,14 +126,14 @@ NetPlanner/
 | 0     | Project scaffold — FastAPI, React, SQLite, Docker Compose | ✅ Done   |
 | 1     | Projects CRUD (backend routes + frontend UI)              | ✅ Done   |
 | 2     | Research Agent + Advisor with streaming (core AI layer)   | ✅ Done   |
-| 3     | TCO Calculator (form, agent, chart visualization)         | ⬜ Next   |
-| 4     | Vendor Comparison (form, agent, matrix UI)                | ⬜        |
+| 3     | TCO Calculator (form, agent, chart visualization)         | ✅ Done   |
+| 4     | Vendor Comparison (form, agent, matrix UI)                | ⬜ Next   |
 | 5     | Report generation (PDF export via WeasyPrint)             | ⬜        |
 | 6     | Polish pass — design refinement, error states, eval run   | ⬜        |
 
-**Current status: Phase 2 complete.** Projects CRUD, the Research Agent, and
-the streaming AI Advisor are implemented and tested — 39 backend tests at 92%
-coverage. The TCO Calculator, Vendor Comparison, and Reports are not yet built.
+**Current status: Phase 3 complete.** Projects CRUD, the AI Advisor, and the
+TCO Calculator are implemented and tested — 56 backend tests at 94% coverage.
+Vendor Comparison and Reports are not yet built.
 See [`docs/RUNBOOK.md`](docs/RUNBOOK.md) for the full phase-by-phase journal.
 
 ---

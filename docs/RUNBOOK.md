@@ -208,6 +208,29 @@ figure, an ROI narrative, alternatives, and confidence tags.
 | 2.5 | Advisor UI: stream-error dismiss button did nothing | Dead `localError` state; `useStream`'s `error` had no external clear | Added `clearError` to `useStream`; removed the dead state |
 | 2.6 | Advisor UI used a `window` CustomEvent bus for suggestion chips | Sub-agent over-avoided one level of prop passing | Replaced with an `onSuggest` prop callback |
 
+### Phase 3 — TCO Calculator
+
+**Shipped:** A **deterministic** TCO calculator (`agents/tco.py`) — year-by-year
+cost model, the PIS-21 reasonableness check, and factual assumptions; the TCO
+persistence service; the TCO routes (`preview` computes without saving, `POST`
+computes and saves, `GET` lists); and the frontend TCO page (input form with
+client-side validation, a Recharts stacked-bar chart, year-by-year table,
+warnings banner, and saved-scenario list). 56 backend tests, 94% coverage.
+Evals 1, 4, and 6 are all automated and passing (the suite now has zero
+skipped tests).
+
+**Design note:** the TCO calculation is plain Python, not an LLM call —
+PIS-09 requires Evals 1/6 to be exact unit tests, and a financial model must
+never produce wrong arithmetic. The "agent" boundary is kept for the stable
+`TCOResult` handoff contract, same pattern as the Project Context Agent.
+
+**Issues encountered and fixed:**
+
+| # | Issue | Cause | Fix |
+|---|---|---|---|
+| 3.1 | PID Eval 1's stated 5-year total ($198,400) contradicted its own breakdown | The total summed only 4 years of licensing; Year 1 + four recurring years at $19,600 is $218,000 | Corrected to $218,000 via **PID amendment 1.2** (user-confirmed); the calculator and Eval 1 use $218,000 |
+| 3.2 | Vite build warns "chunks larger than 500 kB" | `recharts` is a large dependency, now in the bundle | Advisory only — build still succeeds. Code-splitting is a Phase 6 polish item |
+
 ---
 
 ## 7. Troubleshooting
@@ -232,7 +255,7 @@ figure, an ROI narrative, alternatives, and confidence tags.
 | 0 | Project scaffold | ✅ Complete |
 | 1 | Projects CRUD + Project Context Agent | ✅ Complete |
 | 2 | Research Agent + Advisor streaming (core AI layer) | ✅ Complete |
-| 3 | TCO Calculator | ⬜ Next |
-| 4 | Vendor Comparison | ⬜ |
+| 3 | TCO Calculator | ✅ Complete |
+| 4 | Vendor Comparison | ⬜ Next |
 | 5 | Report generation (PDF) | ⬜ |
 | 6 | Polish — design, error states, full eval run | ⬜ |

@@ -1,6 +1,6 @@
 # NetPlanner — Project Initiation Document
 
-**Version:** 1.1  
+**Version:** 1.2  
 **Date:** 2026-05-18  
 **Author:** Elliot Conner / The Tech-E LLC  
 **Status:** Approved — Ready to Build
@@ -56,7 +56,7 @@ NetPlanner is an AI-powered business decision support tool that helps network en
 
 | # | Type | Input | Expected Output | Pass Condition |
 |---|---|---|---|---|
-| 1 | Happy path — TCO | 200 APs, $600 hardware/unit, $98/AP/year licensing, $0 support Year 1, 5-year lifecycle | Year 1: $139,600. Years 2–5: $19,600/year. Total: $198,400 | Numbers match within 1% |
+| 1 | Happy path — TCO | 200 APs, $600 hardware/unit, $98/AP/year licensing, $0 support Year 1, 5-year lifecycle | Year 1: $139,600. Years 2–5: $19,600/year. Total: $218,000 | Numbers match within 1% |
 | 2 | Happy path — Advisor | Project: 200-AP campus. Question: "How do I justify a MIST deployment to my CFO?" | Response contains: CapEx/OpEx framing, at least one specific pricing figure, ROI narrative | All three elements present |
 | 3 | Happy path — Comparison | Vendors: Juniper MIST vs Cisco Meraki. Criteria: licensing model, per-AP annual cost, API capability, AI/ML features, cloud management | Comparison matrix with all 5 criteria, data for both vendors, confidence indicators | All criteria populated, no empty cells |
 | 4 | **Edge case — incomplete input** | TCO form submitted with device count but no hardware cost | System prompts for missing data; does not generate model | Zero TCO output produced; error prompt shown |
@@ -308,3 +308,4 @@ Advisor Agent (multi-turn; invokes Research Agent as tool on demand)
 |---|---|---|
 | 1.0 | 2026-05-18 | Initial PID |
 | 1.1 | 2026-05-18 | Domain 7 (PIS-29): Sonnet-tier model updated `claude-sonnet-4-5` → `claude-sonnet-4-6` (current successor; same cost basis). Approved at Phase 2 kickoff. |
+| 1.2 | 2026-05-18 | Domain 2 (Eval 1): corrected the 5-year total from `$198,400` to `$218,000`. The original total summed only 4 years of licensing; the breakdown (Year 1 + four recurring years at $19,600) sums to $218,000. Approved at Phase 3 kickoff. |
