@@ -159,6 +159,78 @@ async def test_comparison_on_missing_project_returns_404(client: AsyncClient) ->
     assert resp.status_code == 404
 
 
+async def _save_tco(client: AsyncClient, project_id: str) -> str:
+    """Save a TCO scenario and return its id (helper for report tests)."""
+    resp = await client.post(
+        f"/api/projects/{project_id}/tco",
+        json={
+            "scenario_name": "S",
+            "inputs": {
+                "device_count": 10,
+                "hardware_cost_per_unit": 600,
+                "licensing_cost_per_unit_year": 100,
+            },
+        },
+    )
+    return resp.json()["id"]
+
+
+async def test_report_generates_downloadable_pdf(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A report request returns a PDF download (WeasyPrint mocked)."""
+
+    async def _fake_pdf(html: str) -> bytes:
+        return b"%PDF-1.7 fake"
+
+    monkeypatch.setattr("app.routes.reports.pdf.generate_pdf", _fake_pdf)
+
+    project = (await client.post("/api/projects", json={"name": "Rpt"})).json()
+    tco_id = await _save_tco(client, project["id"])
+
+    resp = await client.post(
+        f"/api/projects/{project['id']}/reports",
+        json={
+            "title": "Q1 Planning Report",
+            "artifacts": [{"kind": "tco", "ref_id": tco_id}],
+        },
+    )
+
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/pdf"
+    assert resp.content.startswith(b"%PDF")
+    assert "attachment" in resp.headers["content-disposition"]
+
+
+async def test_report_lists_export_history(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    async def _fake_pdf(html: str) -> bytes:
+        return b"%PDF-fake"
+
+    monkeypatch.setattr("app.routes.reports.pdf.generate_pdf", _fake_pdf)
+
+    project = (await client.post("/api/projects", json={"name": "Rpt"})).json()
+    tco_id = await _save_tco(client, project["id"])
+    await client.post(
+        f"/api/projects/{project['id']}/reports",
+        json={"title": "R1", "artifacts": [{"kind": "tco", "ref_id": tco_id}]},
+    )
+
+    listing = await client.get(f"/api/projects/{project['id']}/reports")
+    assert listing.status_code == 200
+    assert len(listing.json()) == 1
+    assert listing.json()[0]["title"] == "R1"
+
+
+async def test_report_on_missing_project_returns_404(client: AsyncClient) -> None:
+    resp = await client.post(
+        "/api/projects/missing/reports",
+        json={"title": "R", "artifacts": [{"kind": "tco", "ref_id": "x"}]},
+    )
+    assert resp.status_code == 404
+
+
 async def test_eval7_vague_advisor_input_requires_context(client: AsyncClient) -> None:
     """PID Eval 7 — vague advisor input edge case.
 

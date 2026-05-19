@@ -19,7 +19,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.agents.advisor import project_context_is_sufficient, stream_advisor_turn
 from app.agents.project_context import build_project_context
 from app.database import get_db
-from app.schemas.conversation import AdvisorRequest
+from app.models.conversation import Conversation
+from app.schemas.conversation import AdvisorRequest, ConversationSummary
 from app.services import conversation_service, project_service
 
 logger = logging.getLogger(__name__)
@@ -110,3 +111,14 @@ async def advisor_turn(
     return StreamingResponse(
         _advisor_stream(), media_type="text/event-stream", headers=_SSE_HEADERS
     )
+
+
+@router.get("/{project_id}/conversations", response_model=list[ConversationSummary])
+async def list_conversations(
+    project_id: str, db: AsyncSession = Depends(get_db)
+) -> list[Conversation]:
+    """List a project's Advisor conversations, newest first."""
+    project = await project_service.get_project(db, project_id)
+    if project is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Project not found")
+    return await conversation_service.list_conversations(db, project_id)

@@ -66,3 +66,14 @@ async def test_list_messages_empty_for_new_conversation(
     )
 
     assert await conversation_service.list_messages(db_session, conversation.id) == []
+
+
+async def test_list_conversations(db_session: AsyncSession) -> None:
+    project = await _make_project(db_session)
+    await conversation_service.create_conversation(db_session, project.id, "First")
+    await conversation_service.create_conversation(db_session, project.id, "Second")
+
+    conversations = await conversation_service.list_conversations(
+        db_session, project.id
+    )
+    assert {c.title for c in conversations} == {"First", "Second"}

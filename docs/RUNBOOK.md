@@ -252,6 +252,32 @@ live.
 | 4.2 | Live test first hit a stale backend (Phase-0 comparison stub) | The dev `uvicorn` was started before Phase 4 and does not auto-reload | Restart the server after backend code changes — or run it with `--reload` |
 | 4.3 | The comparison call (~30-60s) would race the axios 30s timeout | Frontend `client.js` has a 30s default | `generateComparison` overrides the timeout to 120s per-request |
 
+### Phase 5 — Report generation (PDF)
+
+**Shipped:** The Report Agent (`agents/report.py`) — **deterministic** HTML
+assembly of a project's artifacts (TCO tables with a CSS cost-bar chart, the
+comparison matrix with per-cell confidence, advisor conversations rendered
+from markdown), with the mandatory disclaimer footer (PIS-23/24 #4) and full
+HTML escaping. The PDF service (WeasyPrint, run in a worker thread); artifact
+resolution + report persistence; the routes (`POST` returns the PDF as a
+download, `GET` lists export history); and a new `GET /conversations`
+endpoint. The frontend Reports page — artifact picker across TCO / comparison
+/ conversation, PDF download, and export history. 81 backend tests, 95%
+coverage.
+
+**Design note:** like the TCO Agent, the Report Agent is deterministic
+templating, not an LLM call — PIS-05 requires the PDF to render every table
+"without truncation or formatting errors", and a report must never
+hallucinate a number.
+
+**Issues encountered and fixed:**
+
+| # | Issue | Cause | Fix |
+|---|---|---|---|
+| 5.1 | `import weasyprint` fails on macOS | WeasyPrint needs native Pango/Cairo libraries not installed by default | Lazy import keeps the app importable; the PDF test skips when they are absent; Docker installs them. Local fix: `brew install pango`, then run uvicorn/pytest with `DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib` (Homebrew libs are off the default dyld path on Apple Silicon) |
+| 5.2 | The Reports UI needs to list advisor conversations as selectable artifacts, but no list endpoint existed | Phase 2 only tracked the active conversation client-side | Added `GET /projects/{id}/conversations` + `ConversationSummary` schema |
+| 5.3 | A `422` from the PDF endpoint arrives as an unreadable `Blob` | The frontend requests the response with `responseType: 'blob'`, so error bodies are blobs too | Frontend reads `blob.text()` then `JSON.parse` to recover the `detail` |
+
 ---
 
 ## 7. Troubleshooting
@@ -264,6 +290,7 @@ live.
 | Coverage shows 0% / low % on code that tests exercise | coverage not tracking SQLAlchemy's greenlet bridge | `backend/.coveragerc` must set `concurrency = greenlet,thread` |
 | `ruff` and `isort` fight over import order | `app` not recognized as first-party | `known-first-party = ["app"]` in both tool configs |
 | ESLint: `'React' is defined but never used` | Vite's automatic JSX runtime — no `import React` needed | Remove the import; import hooks directly |
+| `cannot load library 'libgobject-2.0-0'` from WeasyPrint | Native Pango/Cairo libraries missing or off the dyld path (macOS) | `brew install pango`, then run with `DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib`; Docker already installs them on the default path |
 | `alembic check` reports drift | ORM models changed without a migration | `alembic revision --autogenerate -m "..."` |
 | Anthropic API returns `401 invalid x-api-key` despite a valid `.env` key | An `ANTHROPIC_API_KEY` exported in the shell shadows `.env` (env vars outrank `.env`) | Unset/fix the shell var, or run with `env -u ANTHROPIC_API_KEY`; Docker is unaffected |
 
@@ -278,5 +305,5 @@ live.
 | 2 | Research Agent + Advisor streaming (core AI layer) | ✅ Complete |
 | 3 | TCO Calculator | ✅ Complete |
 | 4 | Vendor Comparison | ✅ Complete |
-| 5 | Report generation (PDF) | ⬜ Next |
-| 6 | Polish — design, error states, full eval run | ⬜ |
+| 5 | Report generation (PDF) | ✅ Complete |
+| 6 | Polish — design, error states, full eval run | ⬜ Next |

@@ -21,6 +21,7 @@ anthropic==0.102.0
 
 # --- PDF generation (Phase 5) ---
 weasyprint==63.1
+markdown==3.10.2
 
 # --- Testing ---
 pytest==8.3.4

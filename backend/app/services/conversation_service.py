@@ -32,6 +32,16 @@ async def get_conversation(
     return await db.get(Conversation, conversation_id)
 
 
+async def list_conversations(db: AsyncSession, project_id: str) -> list[Conversation]:
+    """Return a project's conversations, newest first."""
+    result = await db.execute(
+        select(Conversation)
+        .where(Conversation.project_id == project_id)
+        .order_by(Conversation.created_at.desc())
+    )
+    return list(result.scalars().all())
+
+
 async def list_messages(db: AsyncSession, conversation_id: str) -> list[Message]:
     """Return a conversation's messages in chronological order."""
     result = await db.execute(

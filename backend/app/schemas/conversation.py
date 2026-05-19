@@ -44,6 +44,17 @@ class ConversationRead(BaseModel):
     messages: list[MessageRead] = Field(default_factory=list)
 
 
+class ConversationSummary(BaseModel):
+    """Lightweight conversation listing — no message bodies."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    project_id: str
+    title: str
+    created_at: datetime
+
+
 class AdvisorRequest(BaseModel):
     """Inbound payload for a single streaming Advisor turn.
 
