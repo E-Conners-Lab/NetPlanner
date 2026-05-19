@@ -1,6 +1,6 @@
 # NetPlanner — Project Initiation Document
 
-**Version:** 1.0  
+**Version:** 1.1  
 **Date:** 2026-05-18  
 **Author:** Elliot Conner / The Tech-E LLC  
 **Status:** Approved — Ready to Build
@@ -233,10 +233,10 @@ Advisor Agent (multi-turn; invokes Research Agent as tool on demand)
 
 | Role | Model | Rationale |
 |---|---|---|
-| Advisor Agent | claude-sonnet-4-5 | Multi-turn reasoning, business language generation, nuance |
-| TCO Agent | claude-sonnet-4-5 | Structured math reasoning + narrative output |
-| Comparison Agent | claude-sonnet-4-5 | Multi-vendor synthesis with sourced data |
-| Report Agent | claude-sonnet-4-5 | Formatting and narrative generation |
+| Advisor Agent | claude-sonnet-4-6 | Multi-turn reasoning, business language generation, nuance |
+| TCO Agent | claude-sonnet-4-6 | Structured math reasoning + narrative output |
+| Comparison Agent | claude-sonnet-4-6 | Multi-vendor synthesis with sourced data |
+| Report Agent | claude-sonnet-4-6 | Formatting and narrative generation |
 | Research Agent | claude-haiku-4-5 | Web search + structured data extraction — fast and cost-efficient |
 
 **PIS-30 — ROI calculation:**
@@ -307,3 +307,4 @@ Advisor Agent (multi-turn; invokes Research Agent as tool on demand)
 | Version | Date | Change |
 |---|---|---|
 | 1.0 | 2026-05-18 | Initial PID |
+| 1.1 | 2026-05-18 | Domain 7 (PIS-29): Sonnet-tier model updated `claude-sonnet-4-5` → `claude-sonnet-4-6` (current successor; same cost basis). Approved at Phase 2 kickoff. |

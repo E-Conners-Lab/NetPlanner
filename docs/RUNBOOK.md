@@ -184,6 +184,30 @@ uvicorn server.
 | 1.4 | `mypy`: handlers annotated `-> ProjectRead` returned ORM `Project` | FastAPI converts via `response_model`; the annotation was inaccurate | Annotated the true return type (`Project`); `response_model=ProjectRead` is the API contract |
 | 1.5 | Frontend delete failure was silently swallowed | `catch {}` closed the dialog without informing the user | Added an `error` prop to `ConfirmDialog`; `ProjectDetail` surfaces the failure and keeps the dialog open for retry |
 
+### Phase 2 — Research Agent + Advisor streaming (core AI layer)
+
+**Shipped:** The Research Agent (Haiku 4.5 + Anthropic's server-side
+`web_search` tool, confidence-tagged results); the Advisor Agent (Sonnet 4.6,
+streaming, multi-turn, invokes Research as a tool — PIS-13 — with the PIS-17
+spec anchor, PIS-24 guardrails, and a 20-message history cap — PIS-16);
+conversation persistence; the advisor route (SSE `text/event-stream`); and the
+frontend Advisor chat UI (`Advisor.jsx` + a real `useStream` SSE hook). Built
+test-first — 21 new mocked tests (no API calls in CI), 39 total, 92% coverage.
+Eval 7 (vague input → request context) is automated and passing; Eval 2 was
+verified live — the Advisor produced CapEx/OpEx framing, a sourced pricing
+figure, an ROI narrative, alternatives, and confidence tags.
+
+**Issues encountered and fixed:**
+
+| # | Issue | Cause | Fix |
+|---|---|---|---|
+| 2.1 | `anthropic` SDK pinned at `0.40.0` | Predated streaming / web-search / adaptive-thinking support | Bumped to `0.102.0`; re-pinned in `requirements.txt` |
+| 2.2 | PID named `claude-sonnet-4-5` — now a legacy model ID | Models released after the PID was written | Updated to `claude-sonnet-4-6` via **PID amendment 1.1** (same cost basis) |
+| 2.3 | API key valid in `.env` but every call returned `401` | `ANTHROPIC_API_KEY` exported in `~/.zshrc` shadowed `.env` — pydantic-settings gives OS env vars precedence over `.env` | Commented out the `~/.zshrc` export so `.env` is authoritative; precedence is correct and was left as-is |
+| 2.4 | `mypy` rejected plain dict literals for `tools` / `messages` | The Anthropic SDK types those params as strict `TypedDict`s | Targeted `# type: ignore[list-item/arg-type]` — the SDK accepts dicts at runtime |
+| 2.5 | Advisor UI: stream-error dismiss button did nothing | Dead `localError` state; `useStream`'s `error` had no external clear | Added `clearError` to `useStream`; removed the dead state |
+| 2.6 | Advisor UI used a `window` CustomEvent bus for suggestion chips | Sub-agent over-avoided one level of prop passing | Replaced with an `onSuggest` prop callback |
+
 ---
 
 ## 7. Troubleshooting
@@ -197,6 +221,7 @@ uvicorn server.
 | `ruff` and `isort` fight over import order | `app` not recognized as first-party | `known-first-party = ["app"]` in both tool configs |
 | ESLint: `'React' is defined but never used` | Vite's automatic JSX runtime — no `import React` needed | Remove the import; import hooks directly |
 | `alembic check` reports drift | ORM models changed without a migration | `alembic revision --autogenerate -m "..."` |
+| Anthropic API returns `401 invalid x-api-key` despite a valid `.env` key | An `ANTHROPIC_API_KEY` exported in the shell shadows `.env` (env vars outrank `.env`) | Unset/fix the shell var, or run with `env -u ANTHROPIC_API_KEY`; Docker is unaffected |
 
 ---
 
@@ -206,8 +231,8 @@ uvicorn server.
 |---|---|---|
 | 0 | Project scaffold | ✅ Complete |
 | 1 | Projects CRUD + Project Context Agent | ✅ Complete |
-| 2 | Research Agent + Advisor streaming (core AI layer) | ⬜ Next |
-| 3 | TCO Calculator | ⬜ |
+| 2 | Research Agent + Advisor streaming (core AI layer) | ✅ Complete |
+| 3 | TCO Calculator | ⬜ Next |
 | 4 | Vendor Comparison | ⬜ |
 | 5 | Report generation (PDF) | ⬜ |
 | 6 | Polish — design, error states, full eval run | ⬜ |

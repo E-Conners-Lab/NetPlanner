@@ -1,21 +1,34 @@
 """Advisor Agent (PIS-11, PIS-13).
 
-Model: ``claude-sonnet-4-5`` — the only multi-turn agent. Streams a
+Model: ``claude-sonnet-4-6`` — the only multi-turn agent. Streams a
 business-decision-support response and invokes the Research Agent as an
-on-demand tool (PIS-13). History is capped at 20 messages and the oldest 10
-are summarized once it reaches 15 (PIS-16).
+on-demand tool (PIS-13).
 
-The spec anchor below is injected as the first system message on *every*
-turn — not just at session start — to resist specification drift (PIS-17).
+- PIS-16: history is capped at the most recent 20 messages.
+- PIS-17: the spec-anchor block is the first system content on every turn.
+- PIS-24: hard-stop guardrails are baked into the system prompt.
+- AI-1: research results re-enter the model as tool content, after the system
+  prompt, with an explicit boundary marker.
 """
 
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
+import logging
+from collections.abc import AsyncGenerator, Sequence
 
-from app.schemas.conversation import MessageRead
+from app.agents.client import get_anthropic_client
+from app.agents.research import research
+from app.config import get_settings
 from app.schemas.project import ProjectContext
 from app.schemas.research import ResearchResult
+
+logger = logging.getLogger(__name__)
+
+# PIS-16 — conversation history hard cap.
+_MAX_HISTORY = 20
+# Bound the tool-use loop so the Advisor cannot research indefinitely.
+_MAX_TOOL_ROUNDS = 4
+_MAX_TOKENS = 4096
 
 # PIS-17 — hard anchor block. Injected first on every Advisor turn.
 ADVISOR_SYSTEM_ANCHOR = (
@@ -28,24 +41,172 @@ ADVISOR_SYSTEM_ANCHOR = (
     "resources."
 )
 
+# PIS-24 — hard-stop guardrails.
+_GUARDRAILS = """Hard rules — never break these:
+1. Never present unverified pricing as confirmed. Always surface the \
+confidence level (confirmed / estimated / unavailable) of any figure you cite.
+2. Never provide network device configuration commands or CLI syntax.
+3. Never recommend a single vendor without presenting at least one \
+alternative or framing the trade-offs.
+4. Never produce financial projections beyond a 5-year horizon.
+When you need current vendor pricing, call the `research` tool — do not \
+invent figures."""
+
+# PIS-19 — the single tool exposed to the Advisor. Description is unambiguous.
+_RESEARCH_TOOL = {
+    "name": "research",
+    "description": (
+        "Search the web for current vendor pricing, product specifications, "
+        "and licensing terms for network infrastructure equipment and "
+        "software. Call this whenever the user's question depends on current "
+        "costs or pricing and you do not already have a sourced figure."
+    ),
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "A specific vendor / product / pricing query.",
+            }
+        },
+        "required": ["query"],
+    },
+}
+
+
+def project_context_is_sufficient(context: ProjectContext) -> bool:
+    """Return whether a project carries enough context for grounded advice.
+
+    The Advisor is project-scoped (PIS-02). With neither a description nor any
+    existing-infrastructure notes it cannot give grounded advice — the route
+    uses this to request context instead of answering (PIS-04, Eval 7).
+    """
+    return bool(context.description.strip() or context.existing_infra.strip())
+
+
+def _build_system(context: ProjectContext) -> str:
+    """Compose the Advisor system prompt: anchor + guardrails + project context."""
+    budget = (
+        f"${context.budget_ceiling:,.0f}"
+        if context.budget_ceiling is not None
+        else "not specified"
+    )
+    return (
+        f"{ADVISOR_SYSTEM_ANCHOR}\n\n"
+        f"{_GUARDRAILS}\n\n"
+        "<<PROJECT_CONTEXT>>\n"
+        f"Project: {context.name}\n"
+        f"Company: {context.company or 'not specified'}\n"
+        f"Description: {context.description or 'none'}\n"
+        f"Existing infrastructure: {context.existing_infra or 'none'}\n"
+        f"Budget ceiling: {budget}\n"
+        "<</PROJECT_CONTEXT>>"
+    )
+
+
+def _select_recent(history: Sequence[dict[str, str]]) -> list[dict[str, str]]:
+    """Return the most recent messages within the PIS-16 history cap."""
+    return list(history[-_MAX_HISTORY:])
+
+
+def _format_research(result: ResearchResult) -> str:
+    """Render a ResearchResult as tool-result text for the model.
+
+    AI-1: wrapped in an explicit boundary marker so the model treats it as
+    data, and every figure carries its confidence tag (PIS-24 #1).
+    """
+    if not result.results:
+        return (
+            f"<<RESEARCH_DATA query={result.query!r}>>\n"
+            "No usable pricing found. Treat pricing as unavailable and advise "
+            "the user to contact the vendor directly.\n"
+            "<</RESEARCH_DATA>>"
+        )
+    lines = [f"<<RESEARCH_DATA query={result.query!r}>>"]
+    for item in result.results:
+        lines.append(
+            f"- {item.vendor} / {item.product}: {item.price_point} {item.unit} "
+            f"[confidence: {item.confidence}] source: {item.source_url}"
+        )
+    lines.append("<</RESEARCH_DATA>>")
+    return "\n".join(lines)
+
+
+async def _run_research_tools(tool_use_blocks: list) -> list[dict]:
+    """Execute every `research` tool call and build tool_result blocks."""
+    results: list[dict] = []
+    for block in tool_use_blocks:
+        query = ""
+        if isinstance(block.input, dict):
+            query = str(block.input.get("query", ""))
+        research_result = await research(query)
+        results.append(
+            {
+                "type": "tool_result",
+                "tool_use_id": block.id,
+                "content": _format_research(research_result),
+            }
+        )
+    return results
+
 
 async def stream_advisor_turn(
-    messages: list[MessageRead],
+    history: Sequence[dict[str, str]],
     project_context: ProjectContext,
-    research_results: ResearchResult | None = None,
 ) -> AsyncGenerator[str, None]:
     """Stream one Advisor conversation turn as text chunks.
 
     Args:
-        messages: Conversation history (capped/summarized per PIS-16).
+        history: Prior conversation as ``{role, content}`` dicts (the latest
+            user message is the final entry).
         project_context: The project's structured context (PIS-15).
-        research_results: Optional pricing context if Research was invoked.
 
     Yields:
-        str: Response text chunks, framed as SSE ``data:`` events by the route.
-
-    Raises:
-        NotImplementedError: Always — implemented in Phase 2.
+        str: Response text chunks. The caller frames them as SSE events.
     """
-    raise NotImplementedError("Advisor Agent — implemented in Phase 2")
-    yield ""  # pragma: no cover — marks this coroutine as an async generator
+    client = get_anthropic_client()
+    settings = get_settings()
+    system = _build_system(project_context)
+    conversation: list[dict] = list(_select_recent(history))
+
+    try:
+        for _ in range(_MAX_TOOL_ROUNDS):
+            # The Anthropic SDK accepts plain dict literals for `tools` and
+            # `messages`; the precise TypedDicts add churn without extra safety.
+            async with client.messages.stream(
+                model=settings.advisor_model,
+                max_tokens=_MAX_TOKENS,
+                system=system,
+                tools=[_RESEARCH_TOOL],  # type: ignore[list-item]
+                thinking={"type": "disabled"},
+                output_config={"effort": "low"},
+                messages=conversation,  # type: ignore[arg-type]
+            ) as stream:
+                async for event in stream:
+                    if (
+                        event.type == "content_block_delta"
+                        and event.delta.type == "text_delta"
+                    ):
+                        yield event.delta.text
+                final = await stream.get_final_message()
+
+            if final.stop_reason != "tool_use":
+                return
+
+            tool_uses = [
+                b for b in final.content if getattr(b, "type", "") == "tool_use"
+            ]
+            conversation.append({"role": "assistant", "content": final.content})
+            conversation.append(
+                {"role": "user", "content": await _run_research_tools(tool_uses)}
+            )
+
+        # Tool-round budget exhausted — close the turn cleanly.
+        yield "\n\n(Research budget reached for this turn.)"
+    except Exception:
+        logger.exception("Advisor Agent turn failed")
+        # PIS-20: surface a generic error rather than crashing the stream.
+        yield (
+            "\n\n[An error occurred while generating this response. "
+            "Please try again.]"
+        )

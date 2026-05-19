@@ -41,11 +41,12 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:5173"
 
     # --- Model assignments (PID Domain 7 / PIS-29) ------------------------
-    # Documented contract values; override per-environment via .env.
-    advisor_model: str = "claude-sonnet-4-5"
-    tco_model: str = "claude-sonnet-4-5"
-    comparison_model: str = "claude-sonnet-4-5"
-    report_model: str = "claude-sonnet-4-5"
+    # Contract values; override per-environment via .env. The Sonnet-tier
+    # model was updated to claude-sonnet-4-6 in PID amendment 1.1.
+    advisor_model: str = "claude-sonnet-4-6"
+    tco_model: str = "claude-sonnet-4-6"
+    comparison_model: str = "claude-sonnet-4-6"
+    report_model: str = "claude-sonnet-4-6"
     research_model: str = "claude-haiku-4-5"
 
     @property
