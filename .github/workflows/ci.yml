@@ -5,6 +5,9 @@ name: CI
 # informational (continue-on-error) so they surface findings without blocking
 # a freshly-introduced baseline — remove `continue-on-error` to make them gate
 # merges per SEC-29 (dependencies) and SEC-35 (SAST + secret scanning).
+#
+# The backend is managed by uv: `uv.lock` is the committed source of truth and
+# `uv sync --frozen` installs exactly what it pins (fails if it drifts).
 
 on:
   push:
@@ -26,13 +29,12 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v6
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.12"
-          cache: pip
-          cache-dependency-path: |
-            backend/requirements.txt
-            backend/requirements-dev.txt
+          enable-cache: true
+          cache-dependency-glob: backend/uv.lock
 
       - name: Install WeasyPrint native libraries
         run: |
@@ -41,30 +43,30 @@ jobs:
             libgdk-pixbuf-2.0-0 libffi-dev shared-mime-info
 
       - name: Install dependencies
-        run: pip install -r requirements.txt -r requirements-dev.txt
+        run: uv sync --frozen
 
       - name: Ruff (lint)
-        run: ruff check app tests alembic
+        run: uv run ruff check app tests alembic
 
       - name: Black (formatting)
-        run: black --check app tests alembic
+        run: uv run black --check app tests alembic
 
       - name: isort (import order)
-        run: isort --check-only app tests alembic
+        run: uv run isort --check-only app tests alembic
 
       - name: Mypy (type check)
-        run: mypy app --ignore-missing-imports
+        run: uv run mypy app --ignore-missing-imports
 
       - name: Bandit (security static analysis)
-        run: bandit -r app alembic -ll
+        run: uv run bandit -r app alembic -ll
 
       - name: Migrations apply and match the ORM
         run: |
-          alembic upgrade head
-          alembic check
+          uv run alembic upgrade head
+          uv run alembic check
 
       - name: Tests + coverage (80% floor)
-        run: pytest --cov=app --cov-report=term-missing --cov-fail-under=80
+        run: uv run pytest --cov=app --cov-report=term-missing --cov-fail-under=80
 
   frontend:
     name: Frontend gate
@@ -96,7 +98,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v6
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
         with:
           python-version: "3.12"
 
@@ -107,8 +110,9 @@ jobs:
       - name: pip-audit (Python dependency vulnerabilities — SEC-29)
         continue-on-error: true
         run: |
-          pip install pip-audit
-          pip-audit -r backend/requirements.txt -r backend/requirements-dev.txt
+          uv export --project backend --no-emit-project --all-groups \
+            --format requirements-txt -o /tmp/np-requirements.txt
+          uvx pip-audit -r /tmp/np-requirements.txt
 
       - name: npm audit (frontend dependency vulnerabilities — SEC-29)
         continue-on-error: true
@@ -117,9 +121,7 @@ jobs:
 
       - name: Semgrep (SAST — SEC-35)
         continue-on-error: true
-        run: |
-          pip install semgrep
-          semgrep scan --config=auto --error
+        run: uvx semgrep scan --config=auto --error
 
       - name: TruffleHog (secret scanning — SEC-35)
         # Native push protection is paid on private repos; this is the CI

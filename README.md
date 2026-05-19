@@ -58,13 +58,12 @@ docker compose up
 
 ### Local development (without Docker)
 
-**Backend:**
+**Backend** (managed by [uv](https://docs.astral.sh/uv/)):
 ```bash
 cd backend
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt -r requirements-dev.txt
-alembic upgrade head
-uvicorn app.main:app --reload
+uv sync                      # creates .venv and installs locked deps
+uv run alembic upgrade head
+uv run uvicorn app.main:app --reload
 ```
 
 **Frontend:**
@@ -79,12 +78,12 @@ npm run dev
 ```bash
 # Backend — lint, format, types, security, tests
 cd backend
-ruff check app tests alembic
-black --check app tests alembic
-isort --check-only app tests alembic
-mypy app --ignore-missing-imports
-bandit -r app alembic -ll
-pytest
+uv run ruff check app tests alembic
+uv run black --check app tests alembic
+uv run isort --check-only app tests alembic
+uv run mypy app --ignore-missing-imports
+uv run bandit -r app alembic -ll
+uv run pytest
 
 # Frontend — lint and production build
 cd frontend

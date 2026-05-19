@@ -23,7 +23,8 @@ updates:
       - dependency-name: "@vitejs/plugin-react"
         update-types: ["version-update:semver-major"]
 
-  - package-ecosystem: pip
+  # Backend is uv-managed — Dependabot reads pyproject.toml + uv.lock.
+  - package-ecosystem: uv
     directory: /backend
     schedule:
       interval: weekly

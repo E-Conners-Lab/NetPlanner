@@ -58,16 +58,19 @@ dev server. SQLite persists in `backend/data/` (bind-mounted).
 
 ### 3b. Local — backend
 
+The backend is managed by [uv](https://docs.astral.sh/uv/) — `uv.lock` is the
+committed source of truth.
+
 ```bash
 cd backend
-python -m venv .venv && source .venv/bin/activate
-pip install -r requirements.txt -r requirements-dev.txt
-alembic upgrade head            # creates backend/data/netplanner.db
-uvicorn app.main:app --reload   # http://localhost:8000
+uv sync                              # creates .venv, installs locked deps
+uv run alembic upgrade head          # creates backend/data/netplanner.db
+uv run uvicorn app.main:app --reload # http://localhost:8000
 ```
 
-> `requirements-dev.txt` holds the lint/type/security/coverage tooling — needed
-> only to run the quality gate (Section 4), not to run the app.
+> `uv sync` installs the `dev` dependency group (lint/type/security/coverage
+> tooling) as well as runtime deps. `uv sync --no-dev` — used by the Docker
+> image — installs runtime deps only.
 
 ### 3c. Local — frontend
 
@@ -87,19 +90,21 @@ backend alongside it.
 Every section of work must pass this gate before it is considered done. Run it
 incrementally, not just at the end.
 
-### Backend (`cd backend`, venv active)
+### Backend (`cd backend`)
 
 ```bash
-ruff check app tests alembic              # lint
-black --check app tests alembic           # formatting
-isort --check-only app tests alembic      # import order
-mypy app --ignore-missing-imports         # type check
-bandit -r app alembic -ll                 # security (medium+)
-pytest --cov=app --cov-report=term-missing # tests + coverage (target 80%+)
+uv run ruff check app tests alembic              # lint
+uv run black --check app tests alembic           # formatting
+uv run isort --check-only app tests alembic      # import order
+uv run mypy app --ignore-missing-imports         # type check
+uv run bandit -r app alembic -ll                 # security (medium+)
+uv run pytest --cov=app --cov-report=term-missing # tests + coverage (target 80%+)
 ```
 
 Tooling config: `ruff`/`black`/`isort` in the root `pyproject.toml`,
-coverage in `backend/.coveragerc`, pytest in `backend/pytest.ini`.
+coverage in `backend/.coveragerc`, pytest in `[tool.pytest.ini_options]` of
+`backend/pyproject.toml`. Dependencies and the `dev` group live in
+`backend/pyproject.toml`; `backend/uv.lock` pins exact resolved versions.
 
 **CI** — `.github/workflows/ci.yml` runs this whole gate on every push to
 `main` and every PR: the backend gate (lint/type/security/tests + migration
@@ -317,7 +322,8 @@ hallucinate a number.
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `No module named pip` in the venv | venv is uv-managed | `uv pip install ...`, or recreate with `python -m venv` |
+| `No module named pip` in the venv | The backend venv is uv-managed and ships no pip — this is expected | Use `uv run <cmd>` and `uv sync`; never `pip` directly |
+| `uv sync` warns `VIRTUAL_ENV does not match` | A stale `VIRTUAL_ENV` from an old venv is exported in the shell | Harmless — uv uses `backend/.venv` regardless; `unset VIRTUAL_ENV` to silence it |
 | `docker compose up` errors on a missing `.env` | — | `cp .env.example .env` (Compose is also set to `required: false`) |
 | `npm ci` fails in the frontend Docker build | `package-lock.json` missing | Ensure the lockfile is committed; run `npm install` to regenerate |
 | Coverage shows 0% / low % on code that tests exercise | coverage not tracking SQLAlchemy's greenlet bridge | `backend/.coveragerc` must set `concurrency = greenlet,thread` |
