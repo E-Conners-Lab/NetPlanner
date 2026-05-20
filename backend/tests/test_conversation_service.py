@@ -77,3 +77,37 @@ async def test_list_conversations(db_session: AsyncSession) -> None:
         db_session, project.id
     )
     assert {c.title for c in conversations} == {"First", "Second"}
+
+
+def test_derive_title_short_message_returned_as_is() -> None:
+    assert (
+        conversation_service.derive_title_from_message("What's the 5-year TCO?")
+        == "What's the 5-year TCO?"
+    )
+
+
+def test_derive_title_first_sentence_when_within_budget() -> None:
+    msg = "Compare Cisco and Arista. Then walk me through the TCO."
+    assert (
+        conversation_service.derive_title_from_message(msg)
+        == "Compare Cisco and Arista"
+    )
+
+
+def test_derive_title_truncates_long_message_at_word_boundary() -> None:
+    msg = (
+        "Walk me through a refresh plan for a manufacturing access "
+        "layer with three sites and a strict budget ceiling"
+    )
+    title = conversation_service.derive_title_from_message(msg)
+    assert len(title) <= 61  # 60 chars + ellipsis
+    assert title.endswith("…")
+    # Truncates on a word boundary — does not slice a word in half.
+    assert not title.replace("…", "").endswith(" ")
+    assert title.replace("…", "").split(" ")[-1] in msg.split(" ")
+
+
+def test_derive_title_empty_message_falls_back() -> None:
+    assert (
+        conversation_service.derive_title_from_message("   ") == "Untitled conversation"
+    )

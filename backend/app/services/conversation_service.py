@@ -8,14 +8,55 @@ which decides what slice of history to send to the model.
 
 from __future__ import annotations
 
+import re
+
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.conversation import Conversation, Message
 
+_DEFAULT_TITLE = "Untitled conversation"
+_TITLE_MAX_LENGTH = 60
+
+
+def derive_title_from_message(message: str) -> str:
+    """Derive a short, human-readable conversation title from a user message.
+
+    Prefers the first sentence (terminated by ``. ! ?`` or newline) when it
+    fits within the title budget; otherwise truncates at the last word
+    boundary inside the budget and appends a horizontal ellipsis. An empty
+    or whitespace-only message falls back to ``"Untitled conversation"``.
+
+    Used by the Advisor route when it creates a fresh conversation, so the
+    Reports artifact picker never lists generic "Untitled conversation"
+    rows for sessions that have a usable first message.
+    """
+    text = message.strip()
+    if not text:
+        return _DEFAULT_TITLE
+
+    sentence_end = re.search(r"[.!?\n]", text)
+    if sentence_end and sentence_end.start() <= _TITLE_MAX_LENGTH:
+        # If the terminator is at the very end of the message (single-
+        # sentence question/statement that fits the budget), keep the
+        # whole message including its trailing punctuation. Only strip
+        # when there's more text after the terminator (multi-sentence).
+        rest = text[sentence_end.end() :].strip()
+        if not rest and len(text) <= _TITLE_MAX_LENGTH:
+            return text
+        candidate = text[: sentence_end.start()].strip()
+        if candidate:
+            return candidate
+
+    if len(text) <= _TITLE_MAX_LENGTH:
+        return text
+
+    truncated = text[:_TITLE_MAX_LENGTH].rsplit(" ", 1)[0]
+    return (truncated or text[:_TITLE_MAX_LENGTH]).rstrip() + "…"
+
 
 async def create_conversation(
-    db: AsyncSession, project_id: str, title: str = "Untitled conversation"
+    db: AsyncSession, project_id: str, title: str = _DEFAULT_TITLE
 ) -> Conversation:
     """Create and persist a new conversation for a project."""
     conversation = Conversation(project_id=project_id, title=title)

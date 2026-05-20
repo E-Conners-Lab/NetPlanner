@@ -77,7 +77,13 @@ async def advisor_turn(
                 status.HTTP_404_NOT_FOUND, detail="Conversation not found"
             )
     else:
-        conversation = await conversation_service.create_conversation(db, project_id)
+        # Derive the conversation title from the opening message so the
+        # Reports artifact picker shows something readable instead of a
+        # generic "Untitled conversation" row.
+        title = conversation_service.derive_title_from_message(payload.message)
+        conversation = await conversation_service.create_conversation(
+            db, project_id, title=title
+        )
 
     await conversation_service.add_message(db, conversation.id, "user", payload.message)
     history = [
