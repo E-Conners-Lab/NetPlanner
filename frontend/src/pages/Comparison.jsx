@@ -29,6 +29,10 @@ export default function Comparison() {
   /* ── Currently displayed comparison (from generate or saved-row click) */
   const [activeComparison, setActiveComparison] = useState(null);
 
+  /* Setup form is hidden when viewing a saved comparison; an
+   * "+ New comparison" affordance brings it back. */
+  const [setupVisible, setSetupVisible] = useState(true);
+
   /* ── Saved comparisons list ──────────────────────────────────── */
   const [comparisons, setComparisons] = useState([]);
   const [comparisonsLoading, setComparisonsLoading] = useState(false);
@@ -61,6 +65,7 @@ export default function Comparison() {
     setGenerating(true);
     setGenError(null);
     setActiveComparison(null);
+    setSetupVisible(true);
 
     try {
       const response = await generateComparison(id, body);
@@ -84,6 +89,10 @@ export default function Comparison() {
   const handleSelectSaved = (comparison) => {
     setActiveComparison(comparison);
     setGenError(null);
+    // Collapse the setup form so the saved matrix is the focus, not a
+    // duplicate empty form above it. The "+ New comparison" button
+    // brings it back.
+    setSetupVisible(false);
   };
 
   /* ── Derived display values ──────────────────────────────────── */
@@ -116,8 +125,32 @@ export default function Comparison() {
         </div>
       )}
 
-      {/* Input form */}
-      <ComparisonForm onGenerate={handleGenerate} generating={generating} />
+      {/* Input form — collapsed when viewing a saved comparison. */}
+      {setupVisible ? (
+        <ComparisonForm onGenerate={handleGenerate} generating={generating} />
+      ) : (
+        <button
+          type="button"
+          onClick={() => setSetupVisible(true)}
+          className="w-full flex items-center justify-center gap-2 px-4 py-3 rounded-lg border border-[var(--border)] bg-surface/40 hover:bg-surface text-sm text-textMuted hover:text-text transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent"
+        >
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+          New comparison
+        </button>
+      )}
 
       {/* Generation error */}
       {genError && (
