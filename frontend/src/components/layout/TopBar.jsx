@@ -1,66 +1,129 @@
-import { useLocation, useParams } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { Link, useLocation, useParams } from 'react-router-dom';
+import { getProject } from '../../api/projects.js';
 
-/**
- * Maps route patterns to human-readable section titles.
- * Checked in order — first match wins.
- */
-const ROUTE_TITLES = [
-  { pattern: /\/projects\/[^/]+\/advisor$/, label: 'AI Advisor' },
-  { pattern: /\/projects\/[^/]+\/tco$/, label: 'TCO Calculator' },
-  { pattern: /\/projects\/[^/]+\/comparison$/, label: 'Vendor Comparison' },
-  { pattern: /\/projects\/[^/]+\/reports$/, label: 'Reports' },
-  { pattern: /\/projects\/[^/]+$/, label: 'Project Overview' },
-  { pattern: /^\/$/, label: 'Dashboard' },
-];
+/** Section label per project sub-route. */
+const SECTION_LABELS = {
+  advisor: 'AI Advisor',
+  tco: 'TCO Calculator',
+  comparison: 'Vendor Comparison',
+  reports: 'Reports',
+};
 
-function resolveTitle(pathname) {
-  for (const { pattern, label } of ROUTE_TITLES) {
-    if (pattern.test(pathname)) return label;
-  }
-  return 'NetPlanner';
+function Chevron() {
+  return (
+    <svg
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="text-textMuted shrink-0"
+      aria-hidden="true"
+    >
+      <polyline points="9 18 15 12 9 6" />
+    </svg>
+  );
 }
 
 /**
- * TopBar — renders the current section title and a right-side action slot.
- * The action slot is intentionally empty at Phase-0; Phase-1 will inject
- * context-aware actions (e.g. "New Project", "Export Report").
+ * One breadcrumb segment. Renders as a link when `to` is provided and the
+ * segment is not the current page; otherwise renders as plain text.
+ */
+function Crumb({ to, current = false, children }) {
+  if (current || !to) {
+    return (
+      <span
+        className="text-sm font-semibold text-text truncate"
+        aria-current={current ? 'page' : undefined}
+      >
+        {children}
+      </span>
+    );
+  }
+  return (
+    <Link
+      to={to}
+      className="text-sm text-textMuted hover:text-text transition-colors truncate"
+    >
+      {children}
+    </Link>
+  );
+}
+
+/**
+ * TopBar — renders a navigable breadcrumb chain
+ * (Dashboard › [Project Name] › [Section]) and a right-side action slot.
+ *
+ * Each parent crumb is a real `<Link>`, so users can jump back to the
+ * project overview or the dashboard from any sub-page without
+ * round-tripping through the sidebar.
  */
 export default function TopBar() {
   const location = useLocation();
   const { id: projectId } = useParams();
-  const sectionTitle = resolveTitle(location.pathname);
+
+  // Identify the project sub-section (if any) from the URL path.
+  const subMatch = location.pathname.match(/^\/projects\/[^/]+\/([^/]+)/);
+  const sectionKey = subMatch?.[1];
+  const sectionLabel = sectionKey ? SECTION_LABELS[sectionKey] : null;
+
+  // Pull the project name to show in the middle crumb. One GET per project
+  // change; failures fall back to the literal "Project" label.
+  const [projectName, setProjectName] = useState(null);
+  useEffect(() => {
+    if (!projectId) {
+      setProjectName(null);
+      return undefined;
+    }
+    let cancelled = false;
+    getProject(projectId)
+      .then((res) => {
+        if (!cancelled) setProjectName(res.data?.name ?? null);
+      })
+      .catch(() => {
+        // Soft fail — keep the fallback label and don't surface to the user.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [projectId]);
+
+  const onDashboard = location.pathname === '/';
+  const projectCrumbLabel = projectName || 'Project';
 
   return (
     <header className="flex items-center justify-between px-6 py-3 bg-surface border-b border-[var(--border)] shrink-0 h-14">
-      {/* Left: breadcrumb area */}
-      <div className="flex items-center gap-2 min-w-0">
+      <nav aria-label="Breadcrumb" className="flex items-center gap-2 min-w-0">
+        <Crumb to={onDashboard ? null : '/'} current={onDashboard}>
+          Dashboard
+        </Crumb>
+
         {projectId && (
           <>
-            <span className="text-sm text-textMuted truncate max-w-[120px]">
-              Project
-            </span>
-            <svg
-              width="12"
-              height="12"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              className="text-textMuted shrink-0"
-              aria-hidden="true"
+            <Chevron />
+            <Crumb
+              to={sectionLabel ? `/projects/${projectId}` : null}
+              current={!sectionLabel}
             >
-              <polyline points="9 18 15 12 9 6" />
-            </svg>
+              {projectCrumbLabel}
+            </Crumb>
           </>
         )}
-        <h1 className="text-sm font-semibold text-text truncate">{sectionTitle}</h1>
-      </div>
 
-      {/* Right: action slot (placeholder for Phase-1 contextual actions) */}
+        {sectionLabel && (
+          <>
+            <Chevron />
+            <Crumb current>{sectionLabel}</Crumb>
+          </>
+        )}
+      </nav>
+
+      {/* Right: action slot for context-aware actions (e.g. "New Project"). */}
       <div className="flex items-center gap-2" aria-label="Top bar actions">
-        {/* Phase-1: inject <Button> components here */}
         <div className="w-1" aria-hidden="true" />
       </div>
     </header>
