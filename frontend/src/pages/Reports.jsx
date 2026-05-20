@@ -3,7 +3,12 @@ import { useParams } from 'react-router-dom';
 import useProject from '../hooks/useProject.js';
 import { listTcoScenarios } from '../api/tco.js';
 import { listComparisons } from '../api/comparison.js';
-import { listConversations, generateReport, listReports } from '../api/reports.js';
+import {
+  listConversations,
+  generateReport,
+  listReports,
+  downloadReportPdf,
+} from '../api/reports.js';
 import Card from '../components/ui/Card.jsx';
 import Button from '../components/ui/Button.jsx';
 import Input from '../components/ui/Input.jsx';
@@ -151,6 +156,11 @@ export default function Reports() {
   const [reports, setReports] = useState([]);
   const [reportsLoading, setReportsLoading] = useState(false);
   const [reportsError, setReportsError] = useState(null);
+  /* Per-row download state: id of the report currently downloading, and
+   * an inline error specific to a history row (separate from the
+   * generate-flow error so they don't overwrite each other). */
+  const [downloadingReportId, setDownloadingReportId] = useState(null);
+  const [reportsDownloadError, setReportsDownloadError] = useState(null);
 
   /* ── Load TCO scenarios ──────────────────────────────────────── */
   const loadScenarios = useCallback(async () => {
@@ -294,6 +304,26 @@ export default function Reports() {
       setGenerateError(message);
     } finally {
       setGenerating(false);
+    }
+  };
+
+  /* ── Re-download a historical report ─────────────────────────── */
+  const handleDownloadHistoryReport = async (report) => {
+    if (downloadingReportId) return; // serialize clicks
+    setDownloadingReportId(report.id);
+    setReportsDownloadError(null);
+
+    try {
+      const response = await downloadReportPdf(id, report.id);
+      triggerPdfDownload(response.data, response.headers, report.title);
+    } catch (err) {
+      const message = await extractBlobErrorMessage(
+        err,
+        'Failed to download this report. Please try again.'
+      );
+      setReportsDownloadError(message);
+    } finally {
+      setDownloadingReportId(null);
     }
   };
 
@@ -489,6 +519,9 @@ export default function Reports() {
         reports={reports}
         loading={reportsLoading}
         error={reportsError}
+        onDownload={handleDownloadHistoryReport}
+        downloadingId={downloadingReportId}
+        downloadError={reportsDownloadError}
       />
     </div>
   );
