@@ -14,10 +14,22 @@ function formatDate(isoString) {
   });
 }
 
-/** Single saved-scenario row */
-function ScenarioRow({ scenario }) {
+/** Single saved-scenario row — click to re-load into the results panel. */
+function ScenarioRow({ scenario, onSelect, isSelected }) {
   return (
-    <div className="flex items-center justify-between gap-4 py-3 border-b border-[var(--border)]/60 last:border-0">
+    <button
+      type="button"
+      onClick={() => onSelect?.(scenario)}
+      className={[
+        'w-full flex items-center justify-between gap-4 py-3 px-3 -mx-3',
+        'rounded-md text-left transition-colors',
+        'border-b border-[var(--border)]/60 last:border-0',
+        isSelected
+          ? 'bg-accent/5 hover:bg-accent/8'
+          : 'hover:bg-surface/60 focus:bg-surface/60 focus:outline-none',
+      ].join(' ')}
+      aria-pressed={isSelected || undefined}
+    >
       <div className="min-w-0">
         <p className="text-sm font-medium text-text truncate">{scenario.scenario_name}</p>
         <p className="text-xs text-textMuted mt-0.5">{formatDate(scenario.created_at)}</p>
@@ -25,7 +37,7 @@ function ScenarioRow({ scenario }) {
       <span className="font-mono text-sm font-semibold text-accent tabular-nums shrink-0">
         {USD.format(scenario.total_5yr)}
       </span>
-    </div>
+    </button>
   );
 }
 
@@ -59,11 +71,19 @@ function EmptyScenarios() {
 /**
  * TcoSavedScenarios — list of previously saved TCO scenarios.
  *
- * @param {object[]} scenarios  — TCOScenarioRead[]
- * @param {boolean}  loading    — shows skeleton while fetching
- * @param {string}   error      — error message if fetch failed
+ * @param {object[]} scenarios       — TCOScenarioRead[]
+ * @param {boolean}  loading         — shows skeleton while fetching
+ * @param {string}   error           — error message if fetch failed
+ * @param {function} [onSelect]      — invoked with the scenario when a row is clicked
+ * @param {string}   [selectedId]    — id of the currently selected scenario, if any
  */
-export default function TcoSavedScenarios({ scenarios, loading, error }) {
+export default function TcoSavedScenarios({
+  scenarios,
+  loading,
+  error,
+  onSelect,
+  selectedId,
+}) {
   return (
     <Card title="Saved Scenarios">
       {loading && (
@@ -85,7 +105,12 @@ export default function TcoSavedScenarios({ scenarios, loading, error }) {
       {!loading && !error && scenarios.length > 0 && (
         <div>
           {scenarios.map((s) => (
-            <ScenarioRow key={s.id} scenario={s} />
+            <ScenarioRow
+              key={s.id}
+              scenario={s}
+              onSelect={onSelect}
+              isSelected={s.id === selectedId}
+            />
           ))}
         </div>
       )}

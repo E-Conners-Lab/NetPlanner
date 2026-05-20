@@ -34,6 +34,9 @@ export default function TCO() {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState(null);
   const [saved, setSaved] = useState(false);
+  /* id of the currently-displayed saved scenario, if any — drives the
+   * selected-row highlight in `TcoSavedScenarios`. */
+  const [selectedScenarioId, setSelectedScenarioId] = useState(null);
 
   /* ── Saved scenarios state ───────────────────────────────────── */
   const [scenarios, setScenarios] = useState([]);
@@ -70,6 +73,7 @@ export default function TCO() {
     setSaved(false);
     setSaveError(null);
     setLastBody(body);
+    setSelectedScenarioId(null);
 
     try {
       const response = await previewTco(id, body);
@@ -80,6 +84,19 @@ export default function TCO() {
     } finally {
       setCalculating(false);
     }
+  };
+
+  /* ── Re-load a saved scenario into the results panel ─────────── */
+  // No API call needed — the listing already carries everything the
+  // results panel renders. `saved=true` + `lastBody=null` together gate
+  // the Save button so a saved scenario can't be saved again.
+  const handleSelectScenario = (scenario) => {
+    setPreview(scenario);
+    setSelectedScenarioId(scenario.id);
+    setSaved(true);
+    setSaveError(null);
+    setCalcError(null);
+    setLastBody(null);
   };
 
   /* ── Save scenario ───────────────────────────────────────────── */
@@ -157,6 +174,8 @@ export default function TCO() {
         scenarios={scenarios}
         loading={scenariosLoading}
         error={scenariosError}
+        onSelect={handleSelectScenario}
+        selectedId={selectedScenarioId}
       />
     </div>
   );
