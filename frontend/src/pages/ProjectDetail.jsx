@@ -228,21 +228,10 @@ export default function ProjectDetail() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
-      {/* Page header */}
+      {/* Page header — the breadcrumb chain lives in the TopBar
+          (Dashboard › Project Name); not duplicated here. */}
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
-          <div className="flex items-center gap-2 mb-1">
-            <Link
-              to="/"
-              className="text-xs text-textMuted hover:text-text transition-colors duration-150 focus:outline-none focus-visible:ring-2 focus-visible:ring-accent rounded"
-            >
-              Dashboard
-            </Link>
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-textMuted" aria-hidden="true">
-              <polyline points="9 18 15 12 9 6" />
-            </svg>
-            <span className="text-xs text-textMuted">Project</span>
-          </div>
           <h1 className="text-2xl font-semibold text-text truncate">{project.name}</h1>
           {project.company && (
             <p className="text-sm text-textMuted mt-0.5">{project.company}</p>
