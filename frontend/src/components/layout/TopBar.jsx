@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useLocation, useParams } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { getProject } from '../../api/projects.js';
 
 /** Section label per project sub-route. */
@@ -64,9 +64,12 @@ function Crumb({ to, current = false, children }) {
  */
 export default function TopBar() {
   const location = useLocation();
-  const { id: projectId } = useParams();
 
-  // Identify the project sub-section (if any) from the URL path.
+  // Parse `projectId` and section from the path rather than `useParams()`:
+  // the TopBar is rendered outside `<Routes>`, so `useParams()` returns
+  // `{}` here. `useLocation()` is available app-wide.
+  const projectMatch = location.pathname.match(/^\/projects\/([^/]+)/);
+  const projectId = projectMatch?.[1] ?? null;
   const subMatch = location.pathname.match(/^\/projects\/[^/]+\/([^/]+)/);
   const sectionKey = subMatch?.[1];
   const sectionLabel = sectionKey ? SECTION_LABELS[sectionKey] : null;

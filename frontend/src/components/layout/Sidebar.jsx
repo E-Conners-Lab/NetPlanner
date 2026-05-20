@@ -1,4 +1,4 @@
-import { NavLink, useParams } from 'react-router-dom';
+import { NavLink, useLocation } from 'react-router-dom';
 
 /* ── Icon helpers (inline SVG, no icon library dependency) ───── */
 function IconGrid() {
@@ -72,7 +72,11 @@ function SectionLabel({ children }) {
 
 /* ── Main component ─────────────────────────────────────────── */
 export default function Sidebar() {
-  const { id: projectId } = useParams();
+  // The Sidebar is rendered outside `<Routes>`, so `useParams()` returns
+  // `{}` here — parse the project id from the path instead.
+  const { pathname } = useLocation();
+  const projectMatch = pathname.match(/^\/projects\/([^/]+)/);
+  const projectId = projectMatch?.[1] ?? null;
 
   return (
     <aside className="flex flex-col w-56 shrink-0 bg-surface border-r border-[var(--border)] h-full overflow-y-auto">
