@@ -130,3 +130,31 @@ async def test_comparison_discards_cell_with_invalid_confidence() -> None:
         result = await run_comparison_agent(_VENDORS, _CRITERIA, [], _CTX)
 
     assert result.matrix["Cisco Meraki"]["licensing model"].confidence == "unavailable"
+
+
+def test_comparison_prompt_guards_against_proper_noun_fabrication() -> None:
+    """Eval addendum (post-AVS regression).
+
+    During a live demo, the Comparison Agent fabricated an Arista support
+    program named "Arista Value Services / AVS" — a plausible-sounding
+    acronym that does not exist (the real program is A-Care). Confidence
+    tagging caught fake *numbers* but not fake *brand names*.
+
+    This eval pins the prompt-side fix: the Comparison system prompt must
+    explicitly instruct the model to mark proper-noun cells "unavailable"
+    when unsure, rather than approximate or invent. If the guidance is
+    removed or weakened, this test fires.
+    """
+    # Direct access — same package, intentional invariant on the constant.
+    from app.agents.comparison import _COMPARISON_SYSTEM
+
+    text = _COMPARISON_SYSTEM.lower()
+    assert (
+        "proper noun" in text
+    ), "Comparison system prompt must explicitly call out proper-noun handling"
+    # The guidance must tie unsure proper nouns back to the `unavailable`
+    # confidence tag — otherwise the rule has no enforcement hook in the
+    # downstream matrix.
+    assert "unavailable" in text
+    # A concrete negative example anchors the model on what NOT to invent.
+    assert "value services" in text or "fabricate" in text or "invent" in text

@@ -56,6 +56,16 @@ reseller source for it appears in the research data. A price drawn from \
 general knowledge or an indirect source must be "estimated" and written as an \
 approximate/rough figure. If you have no basis for a price at all, the cell \
 is "unavailable". Never present an unsourced price as "confirmed".
+- PROPER NOUNS (vendor product, program, or service names — e.g. support \
+programs, license tiers, management platforms): if you are not confident of \
+the exact current name — for instance because of a recent rebrand or an \
+offering you do not clearly recognize — mark the cell "unavailable" rather \
+than approximate or invent. Plausible-sounding made-up acronyms (e.g. \
+inventing a "Value Services" program for a vendor that does not have one) \
+are the failure mode this rule guards against. Use only canonical, \
+verifiable product and program names; when uncertain, name the vendor \
+generically ("the vendor's support program") and set confidence to \
+"unavailable" rather than fabricate a brand.
 - "summary": a short, balanced paragraph. Never recommend a single vendor \
 without noting trade-offs or alternatives.
 
