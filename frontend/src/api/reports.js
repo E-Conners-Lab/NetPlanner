@@ -42,3 +42,20 @@ export function generateReport(projectId, body) {
 export function listReports(projectId) {
   return client.get(`/projects/${projectId}/reports`);
 }
+
+/**
+ * GET /projects/:id/reports/:reportId/pdf
+ * Re-renders a previously-generated report and returns it as a PDF blob.
+ * Pass `{ responseType: 'blob' }` is already applied — callers feed the
+ * response to the same `triggerPdfDownload` helper as `generateReport`.
+ *
+ * @param {string} projectId
+ * @param {string} reportId
+ * @returns {Promise} Axios response with blob data
+ */
+export function downloadReportPdf(projectId, reportId) {
+  return client.get(`/projects/${projectId}/reports/${reportId}/pdf`, {
+    responseType: 'blob',
+    timeout: 120_000,
+  });
+}

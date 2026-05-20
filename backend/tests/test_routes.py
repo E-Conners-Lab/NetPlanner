@@ -231,6 +231,73 @@ async def test_report_on_missing_project_returns_404(client: AsyncClient) -> Non
     assert resp.status_code == 404
 
 
+async def test_report_redownload_returns_pdf(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A previously-generated report can be re-downloaded by id."""
+
+    async def _fake_pdf(html: str) -> bytes:
+        return b"%PDF-1.7 fake"
+
+    monkeypatch.setattr("app.routes.reports.pdf.generate_pdf", _fake_pdf)
+
+    project = (await client.post("/api/projects", json={"name": "Rd"})).json()
+    tco_id = await _save_tco(client, project["id"])
+    create = await client.post(
+        f"/api/projects/{project['id']}/reports",
+        json={
+            "title": "Re-download Test",
+            "artifacts": [{"kind": "tco", "ref_id": tco_id}],
+        },
+    )
+    assert create.status_code == 200
+    report_id = (await client.get(f"/api/projects/{project['id']}/reports")).json()[0][
+        "id"
+    ]
+
+    resp = await client.get(f"/api/projects/{project['id']}/reports/{report_id}/pdf")
+
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "application/pdf"
+    assert resp.content.startswith(b"%PDF")
+    assert "attachment" in resp.headers["content-disposition"]
+    # SEC-24: sensitive responses must not be cached.
+    assert resp.headers["cache-control"] == "no-store"
+
+
+async def test_report_redownload_missing_report_returns_404(
+    client: AsyncClient,
+) -> None:
+    project = (await client.post("/api/projects", json={"name": "Rd"})).json()
+    resp = await client.get(f"/api/projects/{project['id']}/reports/missing/pdf")
+    assert resp.status_code == 404
+
+
+async def test_report_redownload_wrong_project_returns_404(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """SEC-27 — a report belonging to project A is not retrievable via project B."""
+
+    async def _fake_pdf(html: str) -> bytes:
+        return b"%PDF-fake"
+
+    monkeypatch.setattr("app.routes.reports.pdf.generate_pdf", _fake_pdf)
+
+    project_a = (await client.post("/api/projects", json={"name": "A"})).json()
+    project_b = (await client.post("/api/projects", json={"name": "B"})).json()
+    tco_id = await _save_tco(client, project_a["id"])
+    await client.post(
+        f"/api/projects/{project_a['id']}/reports",
+        json={"title": "Owned by A", "artifacts": [{"kind": "tco", "ref_id": tco_id}]},
+    )
+    report_id = (await client.get(f"/api/projects/{project_a['id']}/reports")).json()[
+        0
+    ]["id"]
+
+    resp = await client.get(f"/api/projects/{project_b['id']}/reports/{report_id}/pdf")
+    assert resp.status_code == 404
+
+
 async def test_eval7_vague_advisor_input_requires_context(client: AsyncClient) -> None:
     """PID Eval 7 — vague advisor input edge case.
 

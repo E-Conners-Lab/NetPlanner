@@ -86,3 +86,9 @@ async def list_reports(db: AsyncSession, project_id: str) -> list[Report]:
         .order_by(Report.created_at.desc())
     )
     return list(result.scalars().all())
+
+
+async def get_report(db: AsyncSession, report_id: str) -> Report | None:
+    """Fetch one report by id, or None if it does not exist."""
+    result = await db.execute(select(Report).where(Report.id == report_id))
+    return result.scalar_one_or_none()
