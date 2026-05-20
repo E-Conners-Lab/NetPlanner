@@ -44,44 +44,63 @@ export default function ComparisonForm({ onGenerate, generating = false }) {
     setCriteriaErrors(cleared);
   };
 
+  /** Trim and collapse interior whitespace — mirrors backend normalization. */
+  const normalize = (s) => s.replace(/\s+/g, ' ').trim();
+
   const validate = () => {
     const vErrors = {};
     const cErrors = {};
 
-    vendors.forEach((v, i) => {
-      if (!v.trim()) {
+    const normalizedVendors = vendors.map(normalize);
+
+    normalizedVendors.forEach((v, i) => {
+      if (!v) {
         vErrors[i] = 'Vendor name is required.';
       }
     });
 
-    const filledVendors = vendors.filter((v) => v.trim());
+    const filledVendors = normalizedVendors.filter((v) => v);
     if (filledVendors.length < 2) {
-      /* Mark all empty ones */
-      vendors.forEach((v, i) => {
-        if (!v.trim()) vErrors[i] = 'Enter at least 2 vendor names.';
+      normalizedVendors.forEach((v, i) => {
+        if (!v) vErrors[i] = 'Enter at least 2 vendor names.';
       });
     }
 
+    // Duplicate / substring-containment guards mirror the backend
+    // ComparisonRequest validator — catch paste errors before the request.
+    const lowered = normalizedVendors.map((v) => v.toLowerCase());
+    lowered.forEach((a, i) => {
+      if (!a || vErrors[i]) return;
+      lowered.forEach((b, j) => {
+        if (i === j || !b) return;
+        if (a === b) {
+          vErrors[i] = 'Vendor names must be unique.';
+        } else if (a.includes(b)) {
+          vErrors[i] = `Looks like two names are merged here (contains "${normalizedVendors[j]}").`;
+        }
+      });
+    });
+
     criteria.forEach((c, i) => {
-      if (!c.trim()) {
+      if (!normalize(c)) {
         cErrors[i] = 'Criterion cannot be empty.';
       }
     });
 
-    const filledCriteria = criteria.filter((c) => c.trim());
+    const filledCriteria = criteria.filter((c) => normalize(c));
     if (filledCriteria.length < 1) {
       criteria.forEach((c, i) => {
-        if (!c.trim()) cErrors[i] = 'Enter at least one criterion.';
+        if (!normalize(c)) cErrors[i] = 'Enter at least one criterion.';
       });
     }
 
-    return { vErrors, cErrors };
+    return { vErrors, cErrors, normalizedVendors };
   };
 
   const handleSubmit = (e) => {
     e.preventDefault();
 
-    const { vErrors, cErrors } = validate();
+    const { vErrors, cErrors, normalizedVendors } = validate();
 
     if (Object.keys(vErrors).length > 0 || Object.keys(cErrors).length > 0) {
       setVendorErrors(vErrors);
@@ -90,8 +109,8 @@ export default function ComparisonForm({ onGenerate, generating = false }) {
     }
 
     onGenerate({
-      vendors: vendors.map((v) => v.trim()),
-      criteria: criteria.map((c) => c.trim()),
+      vendors: normalizedVendors,
+      criteria: criteria.map(normalize),
     });
   };
 

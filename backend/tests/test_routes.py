@@ -151,6 +151,43 @@ async def test_comparison_rejects_fewer_than_two_vendors(client: AsyncClient) ->
     assert resp.status_code == 422
 
 
+async def test_comparison_rejects_duplicate_vendors(client: AsyncClient) -> None:
+    """Duplicate vendor names (case-insensitive) are rejected at the schema."""
+    project = (await client.post("/api/projects", json={"name": "Cmp"})).json()
+    resp = await client.post(
+        f"/api/projects/{project['id']}/comparison",
+        json={
+            "vendors": ["Cisco Meraki", "cisco meraki"],
+            "criteria": ["licensing model"],
+        },
+    )
+    assert resp.status_code == 422
+    assert "duplicate" in resp.text.lower()
+
+
+async def test_comparison_rejects_vendor_containing_another(
+    client: AsyncClient,
+) -> None:
+    """Paste-error guard: vendor A containing vendor B is rejected.
+
+    Mirrors the bad row found during demo walkthrough where field-1 held
+    two vendor names mashed together, producing a malformed list title.
+    """
+    project = (await client.post("/api/projects", json={"name": "Cmp"})).json()
+    resp = await client.post(
+        f"/api/projects/{project['id']}/comparison",
+        json={
+            "vendors": [
+                "Cisco Catalyst 9300 Arista CCS-720XP",
+                "Arista CCS-720XP",
+            ],
+            "criteria": ["licensing model"],
+        },
+    )
+    assert resp.status_code == 422
+    assert "paste error" in resp.text.lower()
+
+
 async def test_comparison_on_missing_project_returns_404(client: AsyncClient) -> None:
     resp = await client.post(
         "/api/projects/missing/comparison",
