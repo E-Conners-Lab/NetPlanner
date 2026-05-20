@@ -20,7 +20,7 @@ from app.agents.advisor import project_context_is_sufficient, stream_advisor_tur
 from app.agents.project_context import build_project_context
 from app.database import get_db
 from app.models.conversation import Conversation
-from app.schemas.conversation import AdvisorRequest, ConversationSummary
+from app.schemas.conversation import AdvisorRequest, ConversationSummary, MessageRead
 from app.services import conversation_service, project_service
 
 logger = logging.getLogger(__name__)
@@ -128,3 +128,29 @@ async def list_conversations(
     if project is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Project not found")
     return await conversation_service.list_conversations(db, project_id)
+
+
+@router.get(
+    "/{project_id}/conversations/{conversation_id}/messages",
+    response_model=list[MessageRead],
+)
+async def list_conversation_messages(
+    project_id: str,
+    conversation_id: str,
+    db: AsyncSession = Depends(get_db),
+) -> list:
+    """Return the messages of one conversation in chronological order.
+
+    Used by the Advisor UI to re-hydrate a previous conversation so the
+    user can continue it. Cross-project access is rejected with 404 to
+    avoid leaking existence (SEC-27).
+    """
+    project = await project_service.get_project(db, project_id)
+    if project is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Project not found")
+
+    conversation = await conversation_service.get_conversation(db, conversation_id)
+    if conversation is None or conversation.project_id != project_id:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+
+    return await conversation_service.list_messages(db, conversation_id)

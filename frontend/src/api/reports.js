@@ -17,6 +17,21 @@ export function listConversations(projectId) {
 }
 
 /**
+ * GET /projects/:id/conversations/:conversationId/messages
+ * Returns the chronological message history for one conversation.
+ * Used by the Advisor UI to re-hydrate a previous conversation.
+ *
+ * @param {string} projectId
+ * @param {string} conversationId
+ * @returns {Promise} MessageRead[]
+ */
+export function getConversationMessages(projectId, conversationId) {
+  return client.get(
+    `/projects/${projectId}/conversations/${conversationId}/messages`,
+  );
+}
+
+/**
  * POST /projects/:id/reports
  * Generates a PDF report from the selected artifacts.
  * The response is a binary PDF blob — pass `{ responseType: 'blob' }` via axios config.

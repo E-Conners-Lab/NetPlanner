@@ -310,6 +310,65 @@ async def test_report_redownload_missing_report_returns_404(
     assert resp.status_code == 404
 
 
+async def test_list_conversation_messages_returns_history(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """GET /conversations/:id/messages returns the chronological history."""
+    from app.models.conversation import Conversation, Message
+    from app.models.project import Project
+
+    project = Project(name="Hist")
+    db_session.add(project)
+    await db_session.commit()
+    await db_session.refresh(project)
+
+    conv = Conversation(project_id=project.id, title="First chat")
+    db_session.add(conv)
+    await db_session.commit()
+    await db_session.refresh(conv)
+
+    db_session.add_all(
+        [
+            Message(conversation_id=conv.id, role="user", content="hi"),
+            Message(conversation_id=conv.id, role="assistant", content="hello"),
+        ]
+    )
+    await db_session.commit()
+
+    resp = await client.get(
+        f"/api/projects/{project.id}/conversations/{conv.id}/messages"
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert [m["role"] for m in body] == ["user", "assistant"]
+    assert [m["content"] for m in body] == ["hi", "hello"]
+
+
+async def test_list_conversation_messages_wrong_project_returns_404(
+    client: AsyncClient, db_session: AsyncSession
+) -> None:
+    """SEC-27 — a conversation in project A is not retrievable via project B."""
+    from app.models.conversation import Conversation
+    from app.models.project import Project
+
+    project_a = Project(name="A")
+    project_b = Project(name="B")
+    db_session.add_all([project_a, project_b])
+    await db_session.commit()
+    await db_session.refresh(project_a)
+    await db_session.refresh(project_b)
+
+    conv = Conversation(project_id=project_a.id, title="A-only")
+    db_session.add(conv)
+    await db_session.commit()
+    await db_session.refresh(conv)
+
+    resp = await client.get(
+        f"/api/projects/{project_b.id}/conversations/{conv.id}/messages"
+    )
+    assert resp.status_code == 404
+
+
 async def test_report_redownload_wrong_project_returns_404(
     client: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:

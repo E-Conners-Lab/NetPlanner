@@ -167,6 +167,25 @@ export default function useStream(projectId) {
     setError(null);
   }, [cancel]);
 
+  /**
+   * Load a previous conversation by id + its pre-fetched message list,
+   * so the next `sendMessage` continues that conversation server-side.
+   *
+   * @param {string} conversationId
+   * @param {{role: string, content: string}[]} messageList
+   */
+  const loadConversation = useCallback(
+    (conversationId, messageList) => {
+      cancel();
+      conversationIdRef.current = conversationId;
+      setMessages(
+        (messageList ?? []).map((m) => ({ role: m.role, content: m.content })),
+      );
+      setError(null);
+    },
+    [cancel],
+  );
+
   /** Dismiss the current error message. */
   const clearError = useCallback(() => setError(null), []);
 
@@ -177,5 +196,13 @@ export default function useStream(projectId) {
     };
   }, []);
 
-  return { messages, streaming, error, sendMessage, reset, clearError };
+  return {
+    messages,
+    streaming,
+    error,
+    sendMessage,
+    reset,
+    clearError,
+    loadConversation,
+  };
 }

@@ -3,6 +3,10 @@ import { useParams } from 'react-router-dom';
 import useProject from '../hooks/useProject.js';
 import useStream from '../hooks/useStream.js';
 import Button from '../components/ui/Button.jsx';
+import {
+  listConversations,
+  getConversationMessages,
+} from '../api/reports.js';
 
 /* ── Sub-components ─────────────────────────────────────────── */
 
@@ -155,11 +159,53 @@ export default function Advisor() {
   const { id: projectId } = useParams();
   const { project, loading: projectLoading } = useProject(projectId);
 
-  const { messages, streaming, error, sendMessage, reset, clearError } =
-    useStream(projectId);
+  const {
+    messages,
+    streaming,
+    error,
+    sendMessage,
+    reset,
+    clearError,
+    loadConversation,
+  } = useStream(projectId);
 
   const [inputValue, setInputValue] = useState('');
   const messagesEndRef = useRef(null);
+
+  // Past conversations for this project — surfaced as compact chips so the
+  // user can continue a previous session rather than always starting fresh.
+  const [pastConversations, setPastConversations] = useState([]);
+  const [activeConversationId, setActiveConversationId] = useState(null);
+
+  const refreshPastConversations = useCallback(async () => {
+    if (!projectId) return;
+    try {
+      const response = await listConversations(projectId);
+      setPastConversations(response.data ?? []);
+    } catch {
+      // Soft fail — the picker just won't render. The Advisor still works
+      // for new conversations.
+    }
+  }, [projectId]);
+
+  useEffect(() => {
+    refreshPastConversations();
+  }, [refreshPastConversations]);
+
+  const handleLoadConversation = useCallback(
+    async (conversationId) => {
+      if (!projectId || streaming) return;
+      try {
+        const response = await getConversationMessages(projectId, conversationId);
+        loadConversation(conversationId, response.data ?? []);
+        setActiveConversationId(conversationId);
+        setInputValue('');
+      } catch {
+        // Soft fail — user can start a new one.
+      }
+    },
+    [projectId, streaming, loadConversation],
+  );
 
   // Auto-scroll to the bottom whenever messages change or a token arrives.
   useEffect(() => {
@@ -186,7 +232,11 @@ export default function Advisor() {
   const handleReset = useCallback(() => {
     reset();
     setInputValue('');
-  }, [reset]);
+    setActiveConversationId(null);
+    // A new send creates a new conversation row; refresh the chip list
+    // afterwards so it surfaces in the picker.
+    refreshPastConversations();
+  }, [reset, refreshPastConversations]);
 
   const hasMessages = messages.length > 0;
   const canSend = inputValue.trim().length > 0 && !streaming;
@@ -212,6 +262,48 @@ export default function Advisor() {
           </Button>
         )}
       </div>
+
+      {/* Past conversations — compact chips. Only shown when there's
+          something to load and the chat panel is empty (avoids a busy
+          header during an active session). */}
+      {!hasMessages && pastConversations.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap pb-3 -mt-2">
+          <span className="text-xs text-textMuted/70 shrink-0">Continue:</span>
+          {pastConversations.slice(0, 4).map((c) => (
+            <button
+              key={c.id}
+              type="button"
+              onClick={() => handleLoadConversation(c.id)}
+              disabled={streaming}
+              title={`Continue "${c.title}"`}
+              aria-pressed={c.id === activeConversationId || undefined}
+              className={[
+                'inline-flex items-center max-w-[220px] gap-1.5 px-2.5 py-1.5 rounded-md',
+                'text-xs text-textMuted hover:text-text',
+                'bg-surface border border-[var(--border)] hover:border-textMuted/30',
+                'transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent',
+                'disabled:opacity-40 disabled:cursor-not-allowed',
+              ].join(' ')}
+            >
+              <svg
+                width="11"
+                height="11"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="shrink-0"
+                aria-hidden="true"
+              >
+                <path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z" />
+              </svg>
+              <span className="truncate">{c.title}</span>
+            </button>
+          ))}
+        </div>
+      )}
 
       {/* ── Chat panel ───────────────────────────────────────── */}
       <div className="flex flex-col flex-1 min-h-0 rounded-xl border border-[var(--border)] bg-surface overflow-hidden">
