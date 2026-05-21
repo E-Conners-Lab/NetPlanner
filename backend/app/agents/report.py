@@ -35,6 +35,22 @@ _CONFIDENCE_CLASS = {
     "unavailable": "conf-unavailable",
 }
 
+# TCO breakdown columns in render order (bottom-up of the stacked chart).
+# A column is rendered only when at least one year carries a non-zero value, so
+# simple scenarios keep a compact table and detailed scenarios get the full
+# breakdown introduced in PID amendment 1.3.
+_TCO_COLUMNS: list[tuple[str, str]] = [
+    ("hardware", "Hardware"),
+    ("spares", "Spares"),
+    ("accessories", "Accessories"),
+    ("installation", "Installation"),
+    ("training", "Training"),
+    ("licensing", "Licensing"),
+    ("support", "Support (Y1)"),
+    ("support_recurring", "Support (recur)"),
+    ("adjacent_recurring", "Adjacent recur"),
+]
+
 # Light, print-friendly stylesheet. The amber accent ties to the brand; the
 # document itself is white for printing/PDF.
 _STYLESHEET = """
@@ -118,25 +134,42 @@ def _render_tco(scenario: TCOScenario) -> str:
     totals = [float(y.get("total", 0)) for y in years] or [0.0]
     peak = max(totals) or 1.0
 
+    # Show only categories that carry a non-zero value in any year — keeps
+    # simple scenarios compact while still exposing the PID 1.3 categories
+    # when they're actually used.
+    active_columns = [
+        (key, label)
+        for key, label in _TCO_COLUMNS
+        if any(float(year.get(key, 0) or 0) > 0 for year in years)
+    ]
+
+    def _cell(value: float) -> str:
+        return f"<td class='num'>{_money(value)}</td>"
+
     rows = []
     for year in years:
         pct = float(year.get("total", 0)) / peak * 100
+        cells = "".join(
+            _cell(float(year.get(key, 0) or 0)) for key, _ in active_columns
+        )
         rows.append(
             "<tr>"
             f"<td>Year {escape(str(year.get('year', '')))}</td>"
-            f"<td class='num'>{_money(year.get('hardware', 0))}</td>"
-            f"<td class='num'>{_money(year.get('licensing', 0))}</td>"
-            f"<td class='num'>{_money(year.get('support', 0))}</td>"
+            f"{cells}"
             f"<td class='num'>{_money(year.get('total', 0))}</td>"
             f"<td><div class='bar-track'><div class='bar-fill' "
             f"style='width:{pct:.1f}%'></div></div></td>"
             "</tr>"
         )
+
+    blank_cells = "<td class='num'></td>" * len(active_columns)
     total_row = (
-        "<tr class='total-row'><td>5-year total</td><td class='num'></td>"
-        "<td class='num'></td><td class='num'></td>"
+        f"<tr class='total-row'><td>{scenario.inputs.get('lifecycle_years', 5)}-year "
+        f"total</td>{blank_cells}"
         f"<td class='num'>{_money(scenario.total_5yr)}</td><td></td></tr>"
     )
+
+    column_headers = "".join(f"<th>{escape(label)}</th>" for _, label in active_columns)
     assumptions = "".join(f"<li>{escape(str(a))}</li>" for a in scenario.assumptions)
     warnings = "".join(f"<li>{escape(str(w))}</li>" for w in scenario.warnings)
     warning_block = (
@@ -147,8 +180,8 @@ def _render_tco(scenario: TCOScenario) -> str:
 
     return (
         f"<h2>TCO Scenario — {escape(scenario.scenario_name)}</h2>"
-        "<table><thead><tr><th>Period</th><th>Hardware</th><th>Licensing</th>"
-        "<th>Support</th><th>Total</th><th>Relative cost</th></tr></thead>"
+        f"<table><thead><tr><th>Period</th>{column_headers}"
+        "<th>Total</th><th>Relative cost</th></tr></thead>"
         f"<tbody>{''.join(rows)}{total_row}</tbody></table>"
         f"<h3>Assumptions</h3><ul class='assumptions'>{assumptions}</ul>"
         f"{warning_block}"
