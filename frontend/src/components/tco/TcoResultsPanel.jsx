@@ -9,39 +9,62 @@ const USD = new Intl.NumberFormat('en-US', {
   maximumFractionDigits: 0,
 });
 
+/**
+ * Year-by-year cost breakdown columns. Order matches the chart stack (bottom-up)
+ * so the table reads consistently with the visual. Columns are hidden when the
+ * series is zero across every year — simple scenarios stay readable.
+ */
+const COLUMNS = [
+  { key: 'hardware', label: 'Hardware' },
+  { key: 'spares', label: 'Spares' },
+  { key: 'accessories', label: 'Accessories' },
+  { key: 'installation', label: 'Installation' },
+  { key: 'training', label: 'Training' },
+  { key: 'licensing', label: 'Licensing' },
+  { key: 'support', label: 'Support (Y1)' },
+  { key: 'support_recurring', label: 'Support (recurring)' },
+  { key: 'adjacent_recurring', label: 'Adjacent recurring' },
+];
+
 /** Year-by-year cost breakdown table */
 function YearByYearTable({ rows }) {
+  const activeColumns = COLUMNS.filter((col) =>
+    rows.some((row) => (row[col.key] ?? 0) > 0)
+  );
+
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm border-collapse">
         <thead>
           <tr className="border-b border-[var(--border)]">
-            {['Year', 'Hardware', 'Licensing', 'Support', 'Total'].map((h) => (
+            <th className="py-2 text-xs font-semibold text-textMuted text-left pl-0 pr-4">
+              Year
+            </th>
+            {activeColumns.map((col) => (
               <th
-                key={h}
-                className={[
-                  'py-2 text-xs font-semibold text-textMuted',
-                  h === 'Year' ? 'text-left pl-0 pr-4' : 'text-right px-3',
-                ].join(' ')}
+                key={col.key}
+                className="py-2 text-xs font-semibold text-textMuted text-right px-3 whitespace-nowrap"
               >
-                {h}
+                {col.label}
               </th>
             ))}
+            <th className="py-2 text-xs font-semibold text-textMuted text-right px-3">
+              Total
+            </th>
           </tr>
         </thead>
         <tbody>
           {rows.map((row) => (
             <tr key={row.year} className="border-b border-[var(--border)]/50">
               <td className="py-2 pr-4 font-medium text-text">Year {row.year}</td>
-              <td className="py-2 px-3 text-right font-mono text-textMuted tabular-nums">
-                {USD.format(row.hardware)}
-              </td>
-              <td className="py-2 px-3 text-right font-mono text-textMuted tabular-nums">
-                {USD.format(row.licensing)}
-              </td>
-              <td className="py-2 px-3 text-right font-mono text-textMuted tabular-nums">
-                {USD.format(row.support)}
-              </td>
+              {activeColumns.map((col) => (
+                <td
+                  key={col.key}
+                  className="py-2 px-3 text-right font-mono text-textMuted tabular-nums"
+                >
+                  {USD.format(row[col.key] ?? 0)}
+                </td>
+              ))}
               <td className="py-2 px-3 text-right font-mono font-semibold text-text tabular-nums">
                 {USD.format(row.total)}
               </td>
