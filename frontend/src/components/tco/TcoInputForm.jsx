@@ -19,7 +19,24 @@ const EMPTY_VALUES = {
   support_cost_year_one: '',
   lifecycle_years: '5',
   device_category: 'access_point',
+  // PID amendment 1.3 — additional cost categories (all optional, default 0).
+  installation_cost: '',
+  accessories_cost_per_unit: '',
+  spares_percent: '',
+  training_cost: '',
+  support_cost_recurring_per_year: '',
+  adjacent_recurring_cost_per_year: '',
 };
+
+/** Fields that are non-negative-number-or-blank (blank → 0). */
+const OPTIONAL_NONNEG_FIELDS = [
+  'support_cost_year_one',
+  'installation_cost',
+  'accessories_cost_per_unit',
+  'training_cost',
+  'support_cost_recurring_per_year',
+  'adjacent_recurring_cost_per_year',
+];
 
 /**
  * TcoInputForm — collects TCO inputs with inline client-side validation.
@@ -30,6 +47,7 @@ const EMPTY_VALUES = {
 export default function TcoInputForm({ onCalculate, calculating = false }) {
   const [values, setValues] = useState(EMPTY_VALUES);
   const [fieldErrors, setFieldErrors] = useState({});
+  const [showAdvanced, setShowAdvanced] = useState(false);
 
   /* Immutable field update — clears the field error on change */
   const handleChange = (field) => (e) => {
@@ -71,10 +89,22 @@ export default function TcoInputForm({ onCalculate, calculating = false }) {
       errors.licensing_cost_per_unit_year = 'Must be a number ≥ 0.';
     }
 
-    if (values.support_cost_year_one.trim() !== '') {
-      const supCost = Number(values.support_cost_year_one);
-      if (Number.isNaN(supCost) || supCost < 0) {
-        errors.support_cost_year_one = 'Must be a number ≥ 0.';
+    // Generic ≥ 0 check for every optional money field.
+    for (const field of OPTIONAL_NONNEG_FIELDS) {
+      const raw = values[field];
+      if (raw !== '' && raw.trim() !== '') {
+        const n = Number(raw);
+        if (Number.isNaN(n) || n < 0) {
+          errors[field] = 'Must be a number ≥ 0.';
+        }
+      }
+    }
+
+    // Spares percent: 0–100 (matches Pydantic ge=0, le=100).
+    if (values.spares_percent !== '' && values.spares_percent.trim() !== '') {
+      const sp = Number(values.spares_percent);
+      if (Number.isNaN(sp) || sp < 0 || sp > 100) {
+        errors.spares_percent = 'Spares must be between 0 and 100 (%).';
       }
     }
 
@@ -85,6 +115,10 @@ export default function TcoInputForm({ onCalculate, calculating = false }) {
 
     return errors;
   };
+
+  /** Convert a possibly-blank string field to a finite number, defaulting to 0. */
+  const numOrZero = (raw) =>
+    raw !== '' && raw.trim() !== '' ? parseFloat(raw) : 0;
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -101,12 +135,16 @@ export default function TcoInputForm({ onCalculate, calculating = false }) {
         device_count: parseInt(values.device_count, 10),
         hardware_cost_per_unit: parseFloat(values.hardware_cost_per_unit),
         licensing_cost_per_unit_year: parseFloat(values.licensing_cost_per_unit_year),
-        support_cost_year_one:
-          values.support_cost_year_one.trim() !== ''
-            ? parseFloat(values.support_cost_year_one)
-            : 0,
+        support_cost_year_one: numOrZero(values.support_cost_year_one),
         lifecycle_years: parseInt(values.lifecycle_years, 10),
         device_category: values.device_category,
+        // PID amendment 1.3 — additional cost categories.
+        installation_cost: numOrZero(values.installation_cost),
+        accessories_cost_per_unit: numOrZero(values.accessories_cost_per_unit),
+        spares_percent: numOrZero(values.spares_percent),
+        training_cost: numOrZero(values.training_cost),
+        support_cost_recurring_per_year: numOrZero(values.support_cost_recurring_per_year),
+        adjacent_recurring_cost_per_year: numOrZero(values.adjacent_recurring_cost_per_year),
       },
     };
 
@@ -223,6 +261,113 @@ export default function TcoInputForm({ onCalculate, calculating = false }) {
             <p className="text-xs text-red-400">{fieldErrors.lifecycle_years}</p>
           )}
         </div>
+      </div>
+
+      {/* PID amendment 1.3 — additional cost categories, hidden by default. */}
+      <div className="border-t border-[var(--border)]/60 pt-3">
+        <button
+          type="button"
+          onClick={() => setShowAdvanced((v) => !v)}
+          className="flex items-center gap-1.5 text-xs font-medium text-textMuted hover:text-text transition-colors duration-150 focus:outline-none"
+          aria-expanded={showAdvanced}
+        >
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className={`transition-transform duration-150 ${showAdvanced ? 'rotate-90' : ''}`}
+            aria-hidden="true"
+          >
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+          {showAdvanced ? 'Hide' : 'Show'} additional costs (installation, accessories, spares, …)
+        </button>
+
+        {showAdvanced && (
+          <div className="mt-3 flex flex-col gap-4">
+            <p className="text-xs text-textMuted/80">
+              All fields below are optional. Leaving a field blank explicitly
+              means $0 for that cost — no silent defaults.
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Input
+                label="Installation / Professional Services (USD, Y1)"
+                id="tco-installation"
+                type="number"
+                placeholder="e.g. 25000 (one-time)"
+                value={values.installation_cost}
+                onChange={handleChange('installation_cost')}
+                disabled={calculating}
+                error={fieldErrors.installation_cost}
+              />
+
+              <Input
+                label="Accessories / Unit (USD, Y1)"
+                id="tco-accessories"
+                type="number"
+                placeholder="e.g. 40 (mounts, cables, optics, PoE)"
+                value={values.accessories_cost_per_unit}
+                onChange={handleChange('accessories_cost_per_unit')}
+                disabled={calculating}
+                error={fieldErrors.accessories_cost_per_unit}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Input
+                label="Spares (% of device count, Y1)"
+                id="tco-spares"
+                type="number"
+                placeholder="e.g. 10 = 10% extra units"
+                value={values.spares_percent}
+                onChange={handleChange('spares_percent')}
+                disabled={calculating}
+                error={fieldErrors.spares_percent}
+              />
+
+              <Input
+                label="Migration / Training Labor (USD, Y1)"
+                id="tco-training"
+                type="number"
+                placeholder="e.g. 4500 (one-time)"
+                value={values.training_cost}
+                onChange={handleChange('training_cost')}
+                disabled={calculating}
+                error={fieldErrors.training_cost}
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <Input
+                label="Recurring Support / Year (USD, Y2+)"
+                id="tco-support-recurring"
+                type="number"
+                placeholder="e.g. 6000 (annual after Y1)"
+                value={values.support_cost_recurring_per_year}
+                onChange={handleChange('support_cost_recurring_per_year')}
+                disabled={calculating}
+                error={fieldErrors.support_cost_recurring_per_year}
+              />
+
+              <Input
+                label="Adjacent Recurring / Year (USD, Y1–Y5)"
+                id="tco-adjacent-recurring"
+                type="number"
+                placeholder="e.g. NAC renewal at 8000/year"
+                value={values.adjacent_recurring_cost_per_year}
+                onChange={handleChange('adjacent_recurring_cost_per_year')}
+                disabled={calculating}
+                error={fieldErrors.adjacent_recurring_cost_per_year}
+              />
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex items-center justify-end pt-2">
