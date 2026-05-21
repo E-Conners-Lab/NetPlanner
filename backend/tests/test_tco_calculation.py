@@ -126,3 +126,214 @@ def test_result_carries_assumptions() -> None:
     assumptions = calculate_tco("Assumptions", inputs).assumptions
     assert assumptions
     assert any("one-time" in a for a in assumptions)
+
+
+# ---------------------------------------------------------------------------
+# PID amendment 1.3 — additional cost categories
+# ---------------------------------------------------------------------------
+
+
+def test_amendment_1_3_defaults_preserve_eval1_total() -> None:
+    """Eval 1 numbers must be unchanged when new fields default to zero."""
+    inputs = TCOFormInputs(
+        device_count=200,
+        hardware_cost_per_unit=600,
+        licensing_cost_per_unit_year=98,
+    )
+    result = calculate_tco("Eval 1 with defaults", inputs)
+
+    assert result.total_5yr == 218_000
+    # Every new category should be exactly $0 on every year.
+    for year in result.year_by_year:
+        assert year.installation == 0
+        assert year.accessories == 0
+        assert year.spares == 0
+        assert year.training == 0
+        assert year.support_recurring == 0
+        assert year.adjacent_recurring == 0
+
+
+def test_installation_cost_is_year_one_only() -> None:
+    inputs = TCOFormInputs(
+        device_count=200,
+        hardware_cost_per_unit=600,
+        licensing_cost_per_unit_year=98,
+        installation_cost=25_000,
+    )
+    result = calculate_tco("With install", inputs)
+
+    assert result.year_by_year[0].installation == 25_000
+    assert all(y.installation == 0 for y in result.year_by_year[1:])
+    # Year 1 total should be the original $139,600 + $25,000 install.
+    assert result.year_by_year[0].total == 139_600 + 25_000
+    assert result.total_5yr == 218_000 + 25_000
+
+
+def test_accessories_cost_scales_with_device_count() -> None:
+    inputs = TCOFormInputs(
+        device_count=200,
+        hardware_cost_per_unit=600,
+        licensing_cost_per_unit_year=98,
+        accessories_cost_per_unit=40,
+    )
+    result = calculate_tco("With accessories", inputs)
+
+    expected_accessories = 200 * 40
+    assert result.year_by_year[0].accessories == expected_accessories
+    assert all(y.accessories == 0 for y in result.year_by_year[1:])
+    assert result.total_5yr == 218_000 + expected_accessories
+
+
+def test_spares_percent_multiplies_hardware() -> None:
+    # 10% spares of 200 APs at $600 = 20 spare units * $600 = $12,000.
+    inputs = TCOFormInputs(
+        device_count=200,
+        hardware_cost_per_unit=600,
+        licensing_cost_per_unit_year=98,
+        spares_percent=10,
+    )
+    result = calculate_tco("With spares", inputs)
+
+    assert result.year_by_year[0].spares == 12_000
+    assert all(y.spares == 0 for y in result.year_by_year[1:])
+    assert result.total_5yr == 218_000 + 12_000
+
+
+def test_training_cost_is_year_one_only() -> None:
+    inputs = TCOFormInputs(
+        device_count=10,
+        hardware_cost_per_unit=600,
+        licensing_cost_per_unit_year=100,
+        training_cost=4_500,
+    )
+    result = calculate_tco("With training", inputs)
+
+    assert result.year_by_year[0].training == 4_500
+    assert all(y.training == 0 for y in result.year_by_year[1:])
+
+
+def test_support_recurring_kicks_in_from_year_two() -> None:
+    inputs = TCOFormInputs(
+        device_count=10,
+        hardware_cost_per_unit=600,
+        licensing_cost_per_unit_year=100,
+        support_cost_year_one=5_000,
+        support_cost_recurring_per_year=2_000,
+    )
+    result = calculate_tco("With renewing support", inputs)
+
+    assert result.year_by_year[0].support == 5_000
+    assert result.year_by_year[0].support_recurring == 0
+    for year in result.year_by_year[1:]:
+        assert year.support == 0
+        assert year.support_recurring == 2_000
+
+
+def test_adjacent_recurring_applies_to_every_year() -> None:
+    # e.g. an existing NAC contract renewing alongside the new fleet.
+    inputs = TCOFormInputs(
+        device_count=10,
+        hardware_cost_per_unit=600,
+        licensing_cost_per_unit_year=100,
+        adjacent_recurring_cost_per_year=8_000,
+    )
+    result = calculate_tco("With NAC renewal", inputs)
+
+    assert len(result.year_by_year) == 5
+    for year in result.year_by_year:
+        assert year.adjacent_recurring == 8_000
+    # 5 years * $8k = $40k of additional recurring spend.
+    baseline = 10 * 600 + 5 * (10 * 100)  # hardware + 5y licensing
+    assert result.total_5yr == baseline + 5 * 8_000
+
+
+def test_all_categories_combined_total_matches_sum_of_parts() -> None:
+    """The 5-year total must equal the sum of every category across years."""
+    inputs = TCOFormInputs(
+        device_count=100,
+        hardware_cost_per_unit=800,
+        licensing_cost_per_unit_year=120,
+        support_cost_year_one=4_000,
+        installation_cost=15_000,
+        accessories_cost_per_unit=30,
+        spares_percent=5,
+        training_cost=3_000,
+        support_cost_recurring_per_year=1_500,
+        adjacent_recurring_cost_per_year=2_000,
+    )
+    result = calculate_tco("Full stack", inputs)
+
+    hardware = 100 * 800
+    licensing_total = 5 * (100 * 120)
+    support_y1 = 4_000
+    installation = 15_000
+    accessories = 100 * 30
+    spares = 100 * 0.05 * 800
+    training = 3_000
+    support_recurring_total = 4 * 1_500  # Y2-Y5
+    adjacent_total = 5 * 2_000
+
+    expected = (
+        hardware
+        + licensing_total
+        + support_y1
+        + installation
+        + accessories
+        + spares
+        + training
+        + support_recurring_total
+        + adjacent_total
+    )
+    assert result.total_5yr == expected
+
+
+def test_low_accessories_cost_is_flagged() -> None:
+    inputs = TCOFormInputs(
+        device_count=200,
+        hardware_cost_per_unit=600,
+        licensing_cost_per_unit_year=98,
+        accessories_cost_per_unit=2,
+    )
+    warnings = calculate_tco("Low accessories", inputs).warnings
+    assert any("Accessories" in w for w in warnings)
+
+
+def test_high_spares_percent_is_flagged() -> None:
+    inputs = TCOFormInputs(
+        device_count=200,
+        hardware_cost_per_unit=600,
+        licensing_cost_per_unit_year=98,
+        spares_percent=75,
+    )
+    warnings = calculate_tco("Excessive spares", inputs).warnings
+    assert any("Spares" in w for w in warnings)
+
+
+def test_zero_accessories_does_not_warn() -> None:
+    # $0 is the explicit "no accessories" default, not an anomaly.
+    inputs = TCOFormInputs(
+        device_count=200,
+        hardware_cost_per_unit=600,
+        licensing_cost_per_unit_year=98,
+        accessories_cost_per_unit=0,
+    )
+    assert calculate_tco("No accessories", inputs).warnings == []
+
+
+def test_legacy_saved_scenario_dict_deserializes() -> None:
+    """Scenarios saved before amendment 1.3 must still load — Pydantic should
+    accept dicts that omit the new fields and fill them with $0 defaults."""
+    legacy_inputs_payload = {
+        "device_count": 200,
+        "hardware_cost_per_unit": 600,
+        "licensing_cost_per_unit_year": 98,
+        "support_cost_year_one": 0,
+        "lifecycle_years": 5,
+        "device_category": "access_point",
+    }
+    inputs = TCOFormInputs.model_validate(legacy_inputs_payload)
+    assert inputs.installation_cost == 0
+    assert inputs.spares_percent == 0
+    assert inputs.support_cost_recurring_per_year == 0
+    # And the computed total matches Eval 1.
+    assert calculate_tco("Legacy", inputs).total_5yr == 218_000
