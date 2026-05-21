@@ -63,9 +63,33 @@ class ComparisonRequest(BaseModel):
     @classmethod
     def _validate_criteria(cls, criteria: list[str]) -> list[str]:
         normalized = [_normalize_vendor(c) for c in criteria]
+
         for c in normalized:
             if not c:
                 raise ValueError("Criterion cannot be empty.")
+
+        seen: set[str] = set()
+        for c in normalized:
+            key = c.lower()
+            if key in seen:
+                raise ValueError(f"Duplicate criterion: {c!r}.")
+            seen.add(key)
+
+        # Symmetric paste-error guard with `_validate_vendors`. A live
+        # Riverbend Health run shipped a comparison whose first criterion read
+        # "PricingCloud management depth and multi-site administration
+        # experience" — two intended criteria mashed together. The matrix
+        # rendered a confused row with all `unavailable` cells. Treat that as
+        # bad input rather than rendering it.
+        lowered = [c.lower() for c in normalized]
+        for i, a in enumerate(lowered):
+            for j, b in enumerate(lowered):
+                if i != j and b in a and a != b:
+                    raise ValueError(
+                        f"Criterion {normalized[i]!r} contains another "
+                        f"criterion ({normalized[j]!r}) — likely a paste error."
+                    )
+
         return normalized
 
 

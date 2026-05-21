@@ -188,6 +188,53 @@ async def test_comparison_rejects_vendor_containing_another(
     assert "paste error" in resp.text.lower()
 
 
+async def test_comparison_rejects_criterion_containing_another(
+    client: AsyncClient,
+) -> None:
+    """Paste-error guard: criterion A containing criterion B is rejected.
+
+    Symmetric to the vendor case. A live Riverbend Health run shipped a
+    comparison whose first criterion read "PricingCloud management depth
+    and multi-site administration experience" — two intended criteria
+    mashed together. The matrix rendered a confused row with all
+    `unavailable` cells. Validate at the route boundary instead.
+    """
+    project = (await client.post("/api/projects", json={"name": "Cmp"})).json()
+    resp = await client.post(
+        f"/api/projects/{project['id']}/comparison",
+        json={
+            "vendors": ["Cisco Meraki", "Juniper Mist"],
+            "criteria": [
+                "PricingCloud management depth and multi-site administration",
+                "Cloud management depth and multi-site administration",
+            ],
+        },
+    )
+    assert resp.status_code == 422
+    assert "paste error" in resp.text.lower()
+
+
+async def test_comparison_rejects_duplicate_criteria(
+    client: AsyncClient,
+) -> None:
+    """Duplicate-criterion guard: case-insensitive duplicates are rejected.
+
+    Symmetric to the duplicate-vendor case. Two identical criteria would
+    produce a malformed matrix where the second column overwrites the
+    first.
+    """
+    project = (await client.post("/api/projects", json={"name": "Cmp"})).json()
+    resp = await client.post(
+        f"/api/projects/{project['id']}/comparison",
+        json={
+            "vendors": ["Cisco Meraki", "Juniper Mist"],
+            "criteria": ["licensing model", "Licensing Model"],
+        },
+    )
+    assert resp.status_code == 422
+    assert "duplicate" in resp.text.lower()
+
+
 async def test_comparison_on_missing_project_returns_404(client: AsyncClient) -> None:
     resp = await client.post(
         "/api/projects/missing/comparison",
