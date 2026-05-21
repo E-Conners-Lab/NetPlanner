@@ -158,3 +158,50 @@ def test_comparison_prompt_guards_against_proper_noun_fabrication() -> None:
     assert "unavailable" in text
     # A concrete negative example anchors the model on what NOT to invent.
     assert "value services" in text or "fabricate" in text or "invent" in text
+
+
+def test_comparison_prompt_forbids_prose_badge_contradiction() -> None:
+    """Eval addendum (post-Riverbend regression).
+
+    A Comparison run produced a cell tagged ``confidence=estimated`` whose
+    ``value`` text said "Enterprise License approximately $200.70 per AP per
+    year (confirmed for 1-year term)". The schema-level rule caught the
+    *badge* but not the contradictory certainty language inside the prose.
+
+    This eval pins the prompt-side fix: the Comparison system prompt must
+    instruct the model that the ``value`` text cannot contradict the
+    ``confidence`` field. If the guidance is removed or weakened, this
+    test fires.
+    """
+    from app.agents.comparison import _COMPARISON_SYSTEM
+
+    text = _COMPARISON_SYSTEM.lower()
+    # The rule must explicitly tie the value text to the badge.
+    assert "agree with the badge" in text or "must not contradict" in text, (
+        "Comparison prompt must require the value text to agree with the "
+        "confidence badge"
+    )
+    # And must call out certainty language as the failure mode.
+    assert "certainty language" in text
+    # And must require URL-or-publication sourcing for `confirmed`.
+    assert "url" in text
+
+
+def test_advisor_prompt_forbids_vague_confirmed_sources() -> None:
+    """Eval addendum (post-Riverbend regression).
+
+    The Advisor cited "AP43 at ~$1,048/unit (confidence: confirmed, HPE
+    Store)" — a vague label ("HPE Store") used as a confirmed-tier citation,
+    where the rule should require a specific URL or named publication.
+
+    This eval pins the prompt-side fix: the Advisor's guardrail block must
+    define what counts as a `confirmed` source. If the guidance is removed
+    or weakened, this test fires.
+    """
+    from app.agents.advisor import _GUARDRAILS
+
+    text = _GUARDRAILS.lower()
+    # Must require URL or publication for `confirmed`.
+    assert "url" in text and ("publication" in text or "named" in text)
+    # Must call out vague-label downgrade as the failure mode.
+    assert "vague" in text or "downgrade" in text

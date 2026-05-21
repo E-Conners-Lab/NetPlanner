@@ -56,6 +56,17 @@ reseller source for it appears in the research data. A price drawn from \
 general knowledge or an indirect source must be "estimated" and written as an \
 approximate/rough figure. If you have no basis for a price at all, the cell \
 is "unavailable". Never present an unsourced price as "confirmed".
+- VALUE TEXT MUST AGREE WITH THE BADGE. The "confidence" field is the \
+contract; the "value" text must not contradict it. When "confidence" is \
+"estimated" or "unavailable", the "value" MUST NOT contain certainty language \
+— do not use the words "confirmed", "verified", "as of [date]", or precise \
+figures with two-decimal-place dollar amounts inside the value text. Use \
+hedged phrasing ("approximately", "in the range of", "typically", "list \
+prices vary"). When "confidence" is "confirmed", the "source" field must be \
+a specific URL or fully named publication — vague labels like "vendor docs", \
+"reseller", or a bare vendor name without a URL are not acceptable sources \
+for a confirmed tag; downgrade to "estimated" if you only have a vague \
+attribution.
 - PROPER NOUNS (vendor product, program, or service names — e.g. support \
 programs, license tiers, management platforms): if you are not confident of \
 the exact current name — for instance because of a recent rebrand or an \

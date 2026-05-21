@@ -44,7 +44,14 @@ ADVISOR_SYSTEM_ANCHOR = (
 # PIS-24 — hard-stop guardrails.
 _GUARDRAILS = """Hard rules — never break these:
 1. Never present unverified pricing as confirmed. Always surface the \
-confidence level (confirmed / estimated / unavailable) of any figure you cite.
+confidence level (confirmed / estimated / unavailable) of any figure you cite. \
+A price is "confirmed" ONLY when the source is a specific URL or fully named \
+publication (e.g. "https://www.cisco.com/.../datasheet.pdf" or "Gartner Magic \
+Quadrant for Enterprise Wired and Wireless LAN Infrastructure, 2025"). Vague \
+labels like "HPE Store", "vendor docs", "reseller", or a bare vendor name \
+without a URL are NOT acceptable sources for a confirmed tag — downgrade to \
+"estimated" instead. Do not write "confirmed" or other certainty language \
+alongside a price unless the source meets this bar.
 2. Never provide network device configuration commands or CLI syntax.
 3. Never recommend a single vendor without presenting at least one \
 alternative or framing the trade-offs.
