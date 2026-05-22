@@ -77,8 +77,6 @@ th { background: #F4F4F6; font-weight: 600; }
 .num { font-family: 'JetBrains Mono', 'Courier New', monospace;
        text-align: right; white-space: nowrap; }
 .total-row td { font-weight: 700; background: #FFF8EB; }
-.bar-track { background: #ECECEF; border-radius: 2px; height: 14px; width: 100%; }
-.bar-fill { background: #F59E0B; height: 14px; border-radius: 2px; }
 .conf-confirmed { color: #15803D; font-weight: 600; }
 .conf-estimated { color: #B45309; font-weight: 600; }
 .conf-unavailable { color: #9099A6; font-weight: 600; }
@@ -131,45 +129,49 @@ def _render_project_overview(project: Project) -> str:
 
 def _render_tco(scenario: TCOScenario) -> str:
     years: list[dict] = list(scenario.year_by_year)
-    totals = [float(y.get("total", 0)) for y in years] or [0.0]
-    peak = max(totals) or 1.0
 
-    # Show only categories that carry a non-zero value in any year — keeps
-    # simple scenarios compact while still exposing the PID 1.3 categories
-    # when they're actually used.
-    active_columns = [
+    # Layout is transposed — cost categories run down the rows and the years
+    # run across the columns. With up to nine PID 1.3 categories, a
+    # category-per-column layout overflows a portrait page; transposing keeps
+    # the table within the page (≤ 5 year columns + a total) and lets new
+    # categories grow vertically instead of off the right edge.
+    span = len(years)
+
+    # Only categories with a non-zero value in some year are shown.
+    active_rows = [
         (key, label)
         for key, label in _TCO_COLUMNS
         if any(float(year.get(key, 0) or 0) > 0 for year in years)
     ]
 
-    def _cell(value: float) -> str:
-        return f"<td class='num'>{_money(value)}</td>"
-
-    rows = []
-    for year in years:
-        pct = float(year.get("total", 0)) / peak * 100
-        cells = "".join(
-            _cell(float(year.get(key, 0) or 0)) for key, _ in active_columns
-        )
-        rows.append(
-            "<tr>"
-            f"<td>Year {escape(str(year.get('year', '')))}</td>"
-            f"{cells}"
-            f"<td class='num'>{_money(year.get('total', 0))}</td>"
-            f"<td><div class='bar-track'><div class='bar-fill' "
-            f"style='width:{pct:.1f}%'></div></div></td>"
-            "</tr>"
-        )
-
-    blank_cells = "<td class='num'></td>" * len(active_columns)
-    total_row = (
-        f"<tr class='total-row'><td>{scenario.inputs.get('lifecycle_years', 5)}-year "
-        f"total</td>{blank_cells}"
-        f"<td class='num'>{_money(scenario.total_5yr)}</td><td></td></tr>"
+    year_headers = "".join(
+        f"<th class='num'>Year {escape(str(y.get('year', i + 1)))}</th>"
+        for i, y in enumerate(years)
+    )
+    head = (
+        f"<tr><th>Cost category</th>{year_headers}"
+        f"<th class='num'>{span}-yr total</th></tr>"
     )
 
-    column_headers = "".join(f"<th>{escape(label)}</th>" for _, label in active_columns)
+    body_rows = []
+    for key, label in active_rows:
+        cells = "".join(
+            f"<td class='num'>{_money(float(y.get(key, 0) or 0))}</td>" for y in years
+        )
+        row_total = sum(float(y.get(key, 0) or 0) for y in years)
+        body_rows.append(
+            f"<tr><td>{escape(label)}</td>{cells}"
+            f"<td class='num'>{_money(row_total)}</td></tr>"
+        )
+
+    total_cells = "".join(
+        f"<td class='num'>{_money(float(y.get('total', 0) or 0))}</td>" for y in years
+    )
+    totals_row = (
+        f"<tr class='total-row'><td>Total</td>{total_cells}"
+        f"<td class='num'>{_money(scenario.total_5yr)}</td></tr>"
+    )
+
     assumptions = "".join(f"<li>{escape(str(a))}</li>" for a in scenario.assumptions)
     warnings = "".join(f"<li>{escape(str(w))}</li>" for w in scenario.warnings)
     warning_block = (
@@ -180,9 +182,8 @@ def _render_tco(scenario: TCOScenario) -> str:
 
     return (
         f"<h2>TCO Scenario — {escape(scenario.scenario_name)}</h2>"
-        f"<table><thead><tr><th>Period</th>{column_headers}"
-        "<th>Total</th><th>Relative cost</th></tr></thead>"
-        f"<tbody>{''.join(rows)}{total_row}</tbody></table>"
+        f"<table><thead>{head}</thead>"
+        f"<tbody>{''.join(body_rows)}{totals_row}</tbody></table>"
         f"<h3>Assumptions</h3><ul class='assumptions'>{assumptions}</ul>"
         f"{warning_block}"
     )
