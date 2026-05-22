@@ -37,7 +37,7 @@ estimates are for planning only — verify with vendors before budget submission
 | Layer        | Stack                                                            |
 |--------------|------------------------------------------------------------------|
 | Backend      | Python 3.12, FastAPI, SQLAlchemy (async) + SQLite, Alembic, Pydantic v2 |
-| AI           | Anthropic Python SDK — Sonnet (advisor/TCO/comparison/report), Haiku (research) |
+| AI           | Anthropic Python SDK — Claude Sonnet (all agents: advisor, TCO, comparison, report, research) |
 | PDF          | WeasyPrint                                                       |
 | Frontend     | React 18 + Vite, Tailwind CSS, Recharts, React Router v6, Axios  |
 | Infra        | Docker Compose                                                   |
@@ -132,7 +132,7 @@ NetPlanner/
 
 **Current status: v1 launch-ready.** All six phases are complete — Projects,
 the AI Advisor, the TCO Calculator, Vendor Comparison, PDF Reports, and the
-polish pass. 84 backend tests at 96% coverage, and **all 7 PID eval cases
+polish pass. 111 backend tests at 95% coverage, and **all 7 PID eval cases
 pass** (the PIS-10 acceptance gate — 6/7 required, both zero-tolerance evals
 included). See [`docs/RUNBOOK.md`](docs/RUNBOOK.md) for the eval results and
 the full build journal.
