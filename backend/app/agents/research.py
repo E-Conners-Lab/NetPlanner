@@ -1,8 +1,8 @@
 """Research Agent (PIS-11).
 
-Model: ``claude-haiku-4-5`` — fast, cost-efficient web search + structured
-extraction (PIS-29). Uses the single Anthropic server-side ``web_search`` tool
-(PIS-19).
+Model: ``claude-sonnet-4-6`` — web search + structured extraction (PIS-29;
+moved from Haiku in amendment 1.4 for higher extraction quality). Uses the
+single Anthropic server-side ``web_search`` tool (PIS-19).
 
 Confidence policy (PIS-27): ``confirmed`` only for an official vendor pricing
 page / datasheet or a Tier-1 reseller; ``estimated`` for indirect sources;

@@ -1,7 +1,7 @@
 # NetPlanner — Project Initiation Document
 
-**Version:** 1.2  
-**Date:** 2026-05-18  
+**Version:** 1.4  
+**Date:** 2026-05-22  
 **Author:** Elliot Conner / The Tech-E LLC  
 **Status:** Approved — Ready to Build
 
@@ -227,7 +227,7 @@ Advisor Agent (multi-turn; invokes Research Agent as tool on demand)
 | Output (avg) | ~800 |
 | **Total Advisor run** | **~6,100 → 9,150 with 1.5x buffer** |
 | TCO/Comparison run (input + output) | ~4,500 |
-| Research/Haiku run | ~1,500 |
+| Research run | ~1,500 |
 
 **PIS-29 — Model assignments:**
 
@@ -237,7 +237,7 @@ Advisor Agent (multi-turn; invokes Research Agent as tool on demand)
 | TCO Agent | claude-sonnet-4-6 | Structured math reasoning + narrative output |
 | Comparison Agent | claude-sonnet-4-6 | Multi-vendor synthesis with sourced data |
 | Report Agent | claude-sonnet-4-6 | Formatting and narrative generation |
-| Research Agent | claude-haiku-4-5 | Web search + structured data extraction — fast and cost-efficient |
+| Research Agent | claude-sonnet-4-6 | Web search + structured data extraction — higher extraction quality (amendment 1.4) |
 
 **PIS-30 — ROI calculation:**
 
@@ -310,3 +310,4 @@ Advisor Agent (multi-turn; invokes Research Agent as tool on demand)
 | 1.1 | 2026-05-18 | Domain 7 (PIS-29): Sonnet-tier model updated `claude-sonnet-4-5` → `claude-sonnet-4-6` (current successor; same cost basis). Approved at Phase 2 kickoff. |
 | 1.2 | 2026-05-18 | Domain 2 (Eval 1): corrected the 5-year total from `$198,400` to `$218,000`. The original total summed only 4 years of licensing; the breakdown (Year 1 + four recurring years at $19,600) sums to $218,000. Approved at Phase 3 kickoff. |
 | 1.3 | 2026-05-21 | Domains 2, 3, 4 (PIS-15, PIS-18, PIS-21, Eval 1): TCO contract extended with six optional cost categories to model real refresh spend surfaced during the Riverbend Health run. `TCOFormInputs` gains `installation_cost` (Y1 flat), `accessories_cost_per_unit` (Y1 × device_count), `spares_percent` (Y1 × device_count × hardware_cost_per_unit), `training_cost` (Y1 flat), `support_cost_recurring_per_year` (Y2+ recurring), `adjacent_recurring_cost_per_year` (Y1–Y5 recurring). `YearCost` (PIS-15) gains matching fields: `installation`, `accessories`, `spares`, `training`, `support_recurring`, `adjacent_recurring`. All new fields default to `0.0` — an explicit user choice ("no cost here"), not a silent default of a missing required input (Eval 4 preserved). Eval 1 figures unchanged ($218,000 5-year total) because all new fields default to zero. PIS-21 reasonableness checks extended: per-unit accessories below $5 flagged; spares above 50% flagged. Existing `support_cost_year_one` semantics unchanged (Y1-only bundled support); recurring support contracts begin Y2 via the new field. Backward compatibility: scenarios saved before this amendment load unchanged — Pydantic defaults absorb the missing fields. Approved at start of TCO refresh work. |
+| 1.4 | 2026-05-22 | Domain 7 (PIS-28, PIS-29): Research Agent model reassigned `claude-haiku-4-5` → `claude-sonnet-4-6`. The full pipeline now runs on Sonnet. Rationale: higher web-search extraction and confidence-classification quality; the marginal per-run cost increase is immaterial at the projected volumes in PIS-30. No contract, schema, or eval change — agent boundaries and handoff shapes (PIS-15) are untouched. PIS-28 token budget line relabeled "Research/Haiku run" → "Research run" (token estimate unchanged; model-agnostic). `config.py` default and the Research Agent docstring updated to match. Approved at start of model-consolidation work. |
