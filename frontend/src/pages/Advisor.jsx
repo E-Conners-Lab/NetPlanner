@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import useProject from '../hooks/useProject.js';
 import useStream from '../hooks/useStream.js';
 import Button from '../components/ui/Button.jsx';
@@ -21,13 +23,22 @@ function MessageBubble({ message }) {
     <div className={['flex w-full', isUser ? 'justify-end' : 'justify-start'].join(' ')}>
       <div
         className={[
-          'max-w-[78%] rounded-2xl px-4 py-3 text-sm leading-relaxed whitespace-pre-wrap',
+          'max-w-[78%] rounded-2xl px-4 py-3 text-sm leading-relaxed',
           isUser
-            ? 'bg-accent/15 text-text border border-accent/20 rounded-br-sm'
+            ? 'bg-accent/15 text-text border border-accent/20 rounded-br-sm whitespace-pre-wrap'
             : 'bg-surface text-text border border-[var(--border)] rounded-bl-sm',
         ].join(' ')}
       >
-        {message.content || (
+        {isUser ? (
+          message.content
+        ) : message.content ? (
+          /* Assistant replies in markdown — render it. react-markdown does not
+             execute raw HTML (no rehype-raw), so web-search-derived content
+             cannot inject script (AI-1). */
+          <div className="advisor-md">
+            <ReactMarkdown remarkPlugins={[remarkGfm]}>{message.content}</ReactMarkdown>
+          </div>
+        ) : (
           /* Streaming indicator — shown while the assistant message is still empty */
           <span className="flex items-center gap-1.5 text-textMuted">
             <span className="inline-block w-1.5 h-1.5 rounded-full bg-textMuted/60 animate-bounce [animation-delay:0ms]" />
