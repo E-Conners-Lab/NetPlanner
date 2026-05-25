@@ -335,5 +335,140 @@ def test_legacy_saved_scenario_dict_deserializes() -> None:
     assert inputs.installation_cost == 0
     assert inputs.spares_percent == 0
     assert inputs.support_cost_recurring_per_year == 0
+    # PID amendment 1.5 — legacy payloads land with no refresh events.
+    assert inputs.refresh_events == []
     # And the computed total matches Eval 1.
     assert calculate_tco("Legacy", inputs).total_5yr == 218_000
+
+
+# ---------------------------------------------------------------------------
+# PID amendment 1.5 — mid-cycle refresh events
+# ---------------------------------------------------------------------------
+
+
+def test_amendment_1_5_no_refresh_preserves_eval1_total() -> None:
+    """Eval 1 numbers must be unchanged when refresh_events is empty."""
+    inputs = TCOFormInputs(
+        device_count=200,
+        hardware_cost_per_unit=600,
+        licensing_cost_per_unit_year=98,
+        refresh_events=[],
+    )
+    result = calculate_tco("Eval 1 no refresh", inputs)
+    assert result.total_5yr == 218_000
+    for year in result.year_by_year:
+        assert year.refresh_hardware == 0
+
+
+def test_refresh_event_adds_hardware_in_target_year_only() -> None:
+    """A Year-3 refresh of 25% of 200 APs at $600 = $30,000 added in Y3."""
+    inputs = TCOFormInputs(
+        device_count=200,
+        hardware_cost_per_unit=600,
+        licensing_cost_per_unit_year=98,
+        refresh_events=[{"year": 3, "percent_of_devices": 25}],
+    )
+    result = calculate_tco("Y3 refresh", inputs)
+
+    # Year 3 carries the refresh; Y1, Y2, Y4, Y5 do not.
+    expected_refresh = 200 * 0.25 * 600  # = 30,000
+    assert result.year_by_year[2].refresh_hardware == expected_refresh
+    for i, year in enumerate(result.year_by_year):
+        if i == 2:
+            continue
+        assert year.refresh_hardware == 0
+    # Total grows by exactly the refresh spend.
+    assert result.total_5yr == 218_000 + expected_refresh
+
+
+def test_refresh_event_uses_override_cost_when_set() -> None:
+    """A cost override replaces the base hardware_cost_per_unit for that event."""
+    inputs = TCOFormInputs(
+        device_count=100,
+        hardware_cost_per_unit=600,
+        licensing_cost_per_unit_year=98,
+        refresh_events=[
+            {"year": 4, "percent_of_devices": 50, "cost_per_unit_override": 450}
+        ],
+    )
+    result = calculate_tco("Discounted refresh", inputs)
+    # 50% of 100 units at $450 each = $22,500.
+    assert result.year_by_year[3].refresh_hardware == 22_500
+
+
+def test_multiple_refresh_events_sum_per_year() -> None:
+    """Two same-year events add together; events in different years stay separate."""
+    inputs = TCOFormInputs(
+        device_count=100,
+        hardware_cost_per_unit=500,
+        licensing_cost_per_unit_year=80,
+        refresh_events=[
+            {"year": 2, "percent_of_devices": 20},
+            {"year": 2, "percent_of_devices": 10},
+            {"year": 4, "percent_of_devices": 25},
+        ],
+    )
+    result = calculate_tco("Phased refresh", inputs)
+
+    # Y2: 30% × 100 × $500 = $15,000; Y4: 25% × 100 × $500 = $12,500.
+    assert result.year_by_year[1].refresh_hardware == 15_000
+    assert result.year_by_year[3].refresh_hardware == 12_500
+    assert result.year_by_year[0].refresh_hardware == 0
+    assert result.year_by_year[2].refresh_hardware == 0
+    assert result.year_by_year[4].refresh_hardware == 0
+
+
+def test_refresh_event_outside_lifecycle_is_warned_and_dropped() -> None:
+    """A refresh in Year 5 against a 3-year lifecycle is flagged, not modeled."""
+    inputs = TCOFormInputs(
+        device_count=10,
+        hardware_cost_per_unit=600,
+        licensing_cost_per_unit_year=100,
+        lifecycle_years=3,
+        refresh_events=[{"year": 5, "percent_of_devices": 50}],
+    )
+    result = calculate_tco("Out-of-window refresh", inputs)
+
+    assert any("outside" in w for w in result.warnings)
+    # The refresh is not added to any year.
+    assert all(y.refresh_hardware == 0 for y in result.year_by_year)
+
+
+def test_refresh_events_totaling_over_100_percent_warn() -> None:
+    """Aggregate refresh > 100% of the fleet across the lifecycle is suspicious."""
+    inputs = TCOFormInputs(
+        device_count=10,
+        hardware_cost_per_unit=600,
+        licensing_cost_per_unit_year=100,
+        refresh_events=[
+            {"year": 2, "percent_of_devices": 60},
+            {"year": 4, "percent_of_devices": 60},
+        ],
+    )
+    warnings = calculate_tco("Over-100 refresh", inputs).warnings
+    assert any("more than a full refresh" in w for w in warnings)
+
+
+def test_refresh_event_appears_in_assumptions() -> None:
+    inputs = TCOFormInputs(
+        device_count=50,
+        hardware_cost_per_unit=600,
+        licensing_cost_per_unit_year=100,
+        refresh_events=[{"year": 3, "percent_of_devices": 25}],
+    )
+    assumptions = calculate_tco("Refresh assumption", inputs).assumptions
+    assert any("Year 3 refresh" in line for line in assumptions)
+
+
+def test_refresh_event_year_one_is_rejected_at_schema() -> None:
+    """Year 1 is the initial deployment — the Pydantic schema rejects year < 2."""
+    import pytest
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        TCOFormInputs(
+            device_count=10,
+            hardware_cost_per_unit=600,
+            licensing_cost_per_unit_year=100,
+            refresh_events=[{"year": 1, "percent_of_devices": 25}],
+        )

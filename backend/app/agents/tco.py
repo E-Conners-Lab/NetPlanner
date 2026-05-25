@@ -10,7 +10,7 @@ contract (PIS-15).
 
 from __future__ import annotations
 
-from app.schemas.tco import TCOFormInputs, TCOResult, YearCost
+from app.schemas.tco import RefreshEvent, TCOFormInputs, TCOResult, YearCost
 
 # PIS-21 — reasonableness thresholds. A per-unit figure between $0 and the
 # threshold is suspiciously low (likely a total entered as a per-unit price).
@@ -49,7 +49,57 @@ def _reasonableness_warnings(inputs: TCOFormInputs) -> list[str]:
             f"high (above {_MAX_REASONABLE_SPARES_PERCENT:.0f}%). Verify this "
             f"is the intended ratio."
         )
+
+    # PID amendment 1.5 — refresh-event reasonableness. The Pydantic schema
+    # already bounds year to [2, 5] and percent to (0, 100], so anything that
+    # reaches here is a higher-level oddity worth surfacing rather than rejecting.
+    total_refresh_percent = sum(
+        event.percent_of_devices for event in inputs.refresh_events
+    )
+    if total_refresh_percent > 100:
+        warnings.append(
+            f"Refresh events total {total_refresh_percent:.0f}% of the fleet — "
+            "more than a full refresh across the lifecycle. Verify the percentages."
+        )
+    for event in inputs.refresh_events:
+        if event.year > inputs.lifecycle_years:
+            warnings.append(
+                f"Refresh in Year {event.year} falls outside the "
+                f"{inputs.lifecycle_years}-year lifecycle and will not be modeled."
+            )
     return warnings
+
+
+def _refresh_cost_for_year(year: int, inputs: TCOFormInputs) -> float:
+    """Sum the refresh hardware spend in a given year (PID amendment 1.5)."""
+    total = 0.0
+    for event in inputs.refresh_events:
+        if event.year != year:
+            continue
+        if event.year > inputs.lifecycle_years:
+            # Out-of-window events are surfaced as a warning, not silently
+            # rolled into the totals.
+            continue
+        per_unit = (
+            event.cost_per_unit_override
+            if event.cost_per_unit_override is not None
+            else inputs.hardware_cost_per_unit
+        )
+        total += inputs.device_count * (event.percent_of_devices / 100.0) * per_unit
+    return total
+
+
+def _refresh_assumption_line(event: RefreshEvent, inputs: TCOFormInputs) -> str:
+    """Render one refresh event as a human-readable assumption."""
+    per_unit = (
+        event.cost_per_unit_override
+        if event.cost_per_unit_override is not None
+        else inputs.hardware_cost_per_unit
+    )
+    return (
+        f"Year {event.year} refresh: {event.percent_of_devices:.0f}% of the "
+        f"fleet ({inputs.device_count} units) at ${per_unit:,.2f} per unit."
+    )
 
 
 def _assumptions(inputs: TCOFormInputs) -> list[str]:
@@ -97,6 +147,11 @@ def _assumptions(inputs: TCOFormInputs) -> list[str]:
             f"${inputs.adjacent_recurring_cost_per_year:,.2f} per year, "
             f"applied to every year of the model."
         )
+    # PID amendment 1.5 — refresh events. Listed in year order so the
+    # assumption block reads chronologically.
+    for event in sorted(inputs.refresh_events, key=lambda e: e.year):
+        if event.year <= inputs.lifecycle_years:
+            lines.append(_refresh_assumption_line(event, inputs))
     return lines
 
 
@@ -149,6 +204,10 @@ def calculate_tco(scenario_name: str, inputs: TCOFormInputs) -> TCOResult:
         )
         adjacent_recurring = inputs.adjacent_recurring_cost_per_year
 
+        # PID amendment 1.5 — mid-cycle refresh. Never in Y1 (that is the
+        # initial deployment) — the schema rejects year < 2.
+        refresh_hardware = _refresh_cost_for_year(year, inputs)
+
         total = (
             hardware
             + licensing
@@ -159,6 +218,7 @@ def calculate_tco(scenario_name: str, inputs: TCOFormInputs) -> TCOResult:
             + training
             + support_recurring
             + adjacent_recurring
+            + refresh_hardware
         )
         year_by_year.append(
             YearCost(
@@ -172,6 +232,7 @@ def calculate_tco(scenario_name: str, inputs: TCOFormInputs) -> TCOResult:
                 training=training,
                 support_recurring=support_recurring,
                 adjacent_recurring=adjacent_recurring,
+                refresh_hardware=refresh_hardware,
                 total=total,
             )
         )

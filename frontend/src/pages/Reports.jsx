@@ -1,4 +1,4 @@
-import { useState, useCallback, useEffect } from 'react';
+import { useState, useCallback, useEffect, useMemo } from 'react';
 import { useParams } from 'react-router-dom';
 import useProject from '../hooks/useProject.js';
 import { listTcoScenarios } from '../api/tco.js';
@@ -14,6 +14,25 @@ import Button from '../components/ui/Button.jsx';
 import Input from '../components/ui/Input.jsx';
 import ArtifactSection from '../components/reports/ArtifactSection.jsx';
 import ReportHistoryList from '../components/reports/ReportHistoryList.jsx';
+
+/**
+ * PID amendment 1.5 — derive the "latest" version id for each lineage, so the
+ * report picker can flag which row is the most recent revision of a scenario.
+ * The TCO list endpoint returns scenarios newest first, so the first time we
+ * see a lineage_id in the list is its latest version.
+ */
+function deriveLatestIdsByLineage(scenarios) {
+  const latest = new Set();
+  const seen = new Set();
+  for (const scenario of scenarios) {
+    const lineageId = scenario.lineage_id ?? scenario.id;
+    if (!seen.has(lineageId)) {
+      seen.add(lineageId);
+      latest.add(scenario.id);
+    }
+  }
+  return latest;
+}
 
 const USD = new Intl.NumberFormat('en-US', {
   style: 'currency',
@@ -148,6 +167,11 @@ export default function Reports() {
   const [selectedComparisonIds, setSelectedComparisonIds] = useState(new Set());
   const [selectedConversationIds, setSelectedConversationIds] = useState(new Set());
 
+  /* PID amendment 1.5 — TCO comparison artifact: an A/B pair, exported as a
+   * side-by-side table in the PDF. Stored as { ref_id, ref_id_b } objects so
+   * the contract matches the backend schema directly. */
+  const [tcoComparisonPair, setTcoComparisonPair] = useState({ a: null, b: null });
+
   /* ── Generation state ────────────────────────────────────────── */
   const [generating, setGenerating] = useState(false);
   const [generateError, setGenerateError] = useState(null);
@@ -270,9 +294,21 @@ export default function Reports() {
     });
   }, []);
 
+  /* PID amendment 1.5 — id-set of "latest version per lineage" for the badge. */
+  const latestScenarioIds = useMemo(
+    () => deriveLatestIdsByLineage(scenarios),
+    [scenarios],
+  );
+
   /* ── Derived: artifacts array for the POST body ──────────────── */
+  const tcoComparisonArtifact =
+    tcoComparisonPair.a && tcoComparisonPair.b && tcoComparisonPair.a !== tcoComparisonPair.b
+      ? [{ kind: 'tco_comparison', ref_id: tcoComparisonPair.a, ref_id_b: tcoComparisonPair.b }]
+      : [];
+
   const selectedArtifacts = [
     ...[...selectedScenarioIds].map((ref_id) => ({ kind: 'tco', ref_id })),
+    ...tcoComparisonArtifact,
     ...[...selectedComparisonIds].map((ref_id) => ({ kind: 'comparison', ref_id })),
     ...[...selectedConversationIds].map((ref_id) => ({ kind: 'advisor_summary', ref_id })),
   ];
@@ -377,7 +413,8 @@ export default function Reports() {
               Select artifacts to include (at least one required)
             </p>
 
-            {/* TCO scenarios */}
+            {/* TCO scenarios — versions surfaced as their own pickable rows so
+                the user can pin a report to a specific revision (PID amendment 1.5). */}
             <ArtifactSection
               title="TCO Scenarios"
               items={scenarios}
@@ -386,15 +423,98 @@ export default function Reports() {
               emptyMessage="No saved TCO scenarios yet."
               selectedIds={selectedScenarioIds}
               onToggle={toggleScenario}
-              renderLabel={(item) => (
-                <span className="flex items-baseline justify-between gap-2 flex-wrap">
-                  <span className="text-sm text-text font-medium">{item.scenario_name}</span>
-                  <span className="font-mono text-xs text-accent tabular-nums shrink-0">
-                    {USD.format(item.total_5yr)} 5yr
+              renderLabel={(item) => {
+                const isLatest = latestScenarioIds.has(item.id);
+                return (
+                  <span className="flex items-baseline justify-between gap-2 flex-wrap">
+                    <span className="flex items-center gap-2 min-w-0">
+                      <span className="text-sm text-text font-medium truncate">
+                        {item.scenario_name}
+                      </span>
+                      <span className="text-[10px] uppercase tracking-wide font-semibold px-1.5 py-0.5 rounded bg-surface text-textMuted font-mono shrink-0">
+                        v{item.version ?? 1}
+                      </span>
+                      {isLatest && (
+                        <span className="text-[10px] uppercase tracking-wide font-semibold px-1.5 py-0.5 rounded bg-accent/15 text-accent shrink-0">
+                          latest
+                        </span>
+                      )}
+                    </span>
+                    <span className="font-mono text-xs text-accent tabular-nums shrink-0">
+                      {USD.format(item.total_5yr)} 5yr · {formatDate(item.created_at)}
+                    </span>
                   </span>
-                </span>
-              )}
+                );
+              }}
             />
+
+            {/* PID amendment 1.5 — TCO comparison: pick two scenarios for a
+                side-by-side artifact rendered in the PDF. */}
+            <div>
+              <h3 className="text-xs font-semibold uppercase tracking-wider text-textMuted mb-2">
+                TCO Comparison (optional)
+              </h3>
+              <p className="text-xs text-textMuted/80 mb-3">
+                Add a side-by-side comparison of two TCO scenarios to the PDF.
+                Pick any two — including two versions of the same lineage.
+              </p>
+              {scenarios.length < 2 ? (
+                <p className="text-sm text-textMuted/60 py-2 pl-1 italic">
+                  Save at least two scenarios to enable a comparison artifact.
+                </p>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div className="flex flex-col gap-1">
+                    <label htmlFor="report-compare-a" className="text-xs font-medium text-textMuted">
+                      Scenario A
+                    </label>
+                    <select
+                      id="report-compare-a"
+                      value={tcoComparisonPair.a ?? ''}
+                      onChange={(e) =>
+                        setTcoComparisonPair((prev) => ({ ...prev, a: e.target.value || null }))
+                      }
+                      disabled={generating}
+                      className="w-full rounded-md px-3 py-2 text-sm bg-bg text-text border border-[var(--border)] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface hover:border-textMuted/40"
+                    >
+                      <option value="">— None —</option>
+                      {scenarios
+                        .filter((s) => s.id !== tcoComparisonPair.b)
+                        .map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.scenario_name} · v{s.version ?? 1}
+                            {latestScenarioIds.has(s.id) ? ' (latest)' : ''}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label htmlFor="report-compare-b" className="text-xs font-medium text-textMuted">
+                      Scenario B
+                    </label>
+                    <select
+                      id="report-compare-b"
+                      value={tcoComparisonPair.b ?? ''}
+                      onChange={(e) =>
+                        setTcoComparisonPair((prev) => ({ ...prev, b: e.target.value || null }))
+                      }
+                      disabled={generating}
+                      className="w-full rounded-md px-3 py-2 text-sm bg-bg text-text border border-[var(--border)] focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-surface hover:border-textMuted/40"
+                    >
+                      <option value="">— None —</option>
+                      {scenarios
+                        .filter((s) => s.id !== tcoComparisonPair.a)
+                        .map((s) => (
+                          <option key={s.id} value={s.id}>
+                            {s.scenario_name} · v{s.version ?? 1}
+                            {latestScenarioIds.has(s.id) ? ' (latest)' : ''}
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+                </div>
+              )}
+            </div>
 
             {/* Vendor comparisons */}
             <ArtifactSection

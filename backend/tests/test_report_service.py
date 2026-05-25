@@ -59,21 +59,26 @@ async def test_resolve_artifacts_resolves_each_kind(db_session: AsyncSession) ->
         ReportArtifact(kind="comparison", ref_id=comparison.id),
         ReportArtifact(kind="advisor_summary", ref_id=conversation.id),
     ]
-    tcos, comparisons, advisors, unresolved = await report_service.resolve_artifacts(
-        db_session, project.id, artifacts
-    )
+    (
+        tcos,
+        comparisons,
+        advisors,
+        tco_comparisons,
+        unresolved,
+    ) = await report_service.resolve_artifacts(db_session, project.id, artifacts)
 
     assert len(tcos) == 1
     assert len(comparisons) == 1
     assert len(advisors) == 1
     assert advisors[0][0] == "CFO chat"
+    assert tco_comparisons == []
     assert unresolved == []
 
 
 async def test_resolve_artifacts_flags_missing(db_session: AsyncSession) -> None:
     # PIS-20: an unresolved artifact is surfaced, not silently dropped.
     project = await _project(db_session)
-    tcos, _, _, unresolved = await report_service.resolve_artifacts(
+    tcos, _, _, _, unresolved = await report_service.resolve_artifacts(
         db_session, project.id, [ReportArtifact(kind="tco", ref_id="nope")]
     )
     assert tcos == []
@@ -90,11 +95,66 @@ async def test_resolve_artifacts_rejects_cross_project(
         db_session, project_a.id, calculate_tco("S", _TCO_INPUTS)
     )
 
-    tcos, _, _, unresolved = await report_service.resolve_artifacts(
+    tcos, _, _, _, unresolved = await report_service.resolve_artifacts(
         db_session, project_b.id, [ReportArtifact(kind="tco", ref_id=tco.id)]
     )
     assert tcos == []
     assert len(unresolved) == 1
+
+
+# ---------------------------------------------------------------------------
+# PID amendment 1.5 — tco_comparison artifact kind
+# ---------------------------------------------------------------------------
+
+
+async def test_resolve_tco_comparison_artifact(db_session: AsyncSession) -> None:
+    project = await _project(db_session)
+    v1 = await tco_service.save_scenario(
+        db_session, project.id, calculate_tco("Plan", _TCO_INPUTS)
+    )
+    v2 = await tco_service.save_scenario(
+        db_session, project.id, calculate_tco("Plan", _TCO_INPUTS), parent=v1
+    )
+
+    artifact = ReportArtifact(kind="tco_comparison", ref_id=v1.id, ref_id_b=v2.id)
+    _, _, _, comparisons, unresolved = await report_service.resolve_artifacts(
+        db_session, project.id, [artifact]
+    )
+    assert len(comparisons) == 1
+    assert {comparisons[0][0].id, comparisons[0][1].id} == {v1.id, v2.id}
+    assert unresolved == []
+
+
+async def test_resolve_tco_comparison_rejects_cross_project(
+    db_session: AsyncSession,
+) -> None:
+    """SEC-27: comparison must not silently include a scenario from another project."""
+    project_a = await _project(db_session, "A")
+    project_b = await _project(db_session, "B")
+    v1 = await tco_service.save_scenario(
+        db_session, project_a.id, calculate_tco("Plan", _TCO_INPUTS)
+    )
+    v_other = await tco_service.save_scenario(
+        db_session, project_b.id, calculate_tco("Plan", _TCO_INPUTS)
+    )
+
+    artifact = ReportArtifact(kind="tco_comparison", ref_id=v1.id, ref_id_b=v_other.id)
+    _, _, _, comparisons, unresolved = await report_service.resolve_artifacts(
+        db_session, project_a.id, [artifact]
+    )
+    assert comparisons == []
+    assert len(unresolved) == 1
+
+
+def test_tco_comparison_artifact_requires_two_distinct_ids() -> None:
+    """Pydantic validator rejects same-id pairs and missing ref_id_b."""
+    import pytest
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        ReportArtifact(kind="tco_comparison", ref_id="abc")  # no ref_id_b
+    with pytest.raises(ValidationError):
+        ReportArtifact(kind="tco_comparison", ref_id="abc", ref_id_b="abc")
 
 
 async def test_save_and_list_reports(db_session: AsyncSession) -> None:

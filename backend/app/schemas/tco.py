@@ -7,6 +7,46 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class RefreshEvent(BaseModel):
+    """A mid-cycle hardware refresh inside a TCO lifecycle (PID amendment 1.5).
+
+    Modelled as an additive hardware spend in a specific year. Refreshed units
+    re-use the existing licensing line (same fleet size), so only hardware
+    cost moves; licensing, support, and adjacent recurring are unaffected.
+
+    `cost_per_unit_override` lets the user model "new gear is cheaper / more
+    expensive than the original purchase" without editing the base input.
+    Leaving it `None` means refreshed units cost the same per unit as the
+    initial deployment.
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    year: int = Field(
+        ...,
+        ge=2,
+        le=5,
+        description=(
+            "Year the refresh occurs. Year 1 is the initial deployment so "
+            "refresh events start at Year 2; cap follows PIS-24 #4 (5-year)."
+        ),
+    )
+    percent_of_devices: float = Field(
+        ...,
+        gt=0,
+        le=100,
+        description="Percentage of the fleet refreshed in this year (0 < pct <= 100).",
+    )
+    cost_per_unit_override: float | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "Optional override cost per refreshed unit. If None, the original "
+            "hardware_cost_per_unit is used."
+        ),
+    )
+
+
 class TCOFormInputs(BaseModel):
     """Validated TCO form inputs (PIS-18).
 
@@ -20,6 +60,10 @@ class TCOFormInputs(BaseModel):
     adjacent recurring contracts). All default to `0.0` — leaving a field at its
     default is an *explicit* user choice ("I have no cost here"), not a silent
     fill of a missing required input (Eval 4).
+
+    `refresh_events` (PID amendment 1.5) models mid-cycle hardware refreshes
+    inside the lifecycle window. The default is an empty list, so legacy saved
+    scenarios deserialize unchanged.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -65,12 +109,21 @@ class TCOFormInputs(BaseModel):
         description="Adjacent existing-stack recurring (e.g. NAC); applies Y1-Y5",
     )
 
+    # PID amendment 1.5 — mid-cycle hardware refreshes. Empty by default.
+    refresh_events: list[RefreshEvent] = Field(
+        default_factory=list,
+        description="Mid-cycle hardware refresh events; empty = no refresh.",
+    )
+
 
 class YearCost(BaseModel):
     """A single year's cost breakdown in the TCO model (PIS-15).
 
     The six fields after `support` were added in PID amendment 1.3. They default
     to `0.0` so saved scenarios from before the amendment deserialize unchanged.
+    `refresh_hardware` was added in PID amendment 1.5 with the same default,
+    so the year-by-year breakdown column appears only when mid-cycle refresh is
+    actually used.
     """
 
     model_config = ConfigDict(from_attributes=True)
@@ -86,6 +139,7 @@ class YearCost(BaseModel):
     training: float = 0.0
     support_recurring: float = 0.0
     adjacent_recurring: float = 0.0
+    refresh_hardware: float = 0.0
 
 
 class TCOResult(BaseModel):
@@ -106,14 +160,31 @@ class TCOResult(BaseModel):
 
 
 class TCOScenarioCreate(BaseModel):
-    """Inbound payload for computing / saving a TCO scenario."""
+    """Inbound payload for computing / saving a TCO scenario.
+
+    `parent_scenario_id` is the versioning hook (PID amendment 1.5). When set,
+    the saved scenario inherits the parent's lineage and is stored as the next
+    version in that lineage. When absent, the save starts a new lineage at v1.
+    """
 
     scenario_name: str = Field(..., min_length=1, max_length=200)
     inputs: TCOFormInputs
+    parent_scenario_id: str | None = Field(
+        default=None,
+        description=(
+            "Optional id of an existing scenario to save this as a new version "
+            "of. The new row inherits the parent's lineage_id and bumps version "
+            "by 1."
+        ),
+    )
 
 
 class TCOScenarioRead(BaseModel):
-    """Outbound representation of a persisted TCO scenario."""
+    """Outbound representation of a persisted TCO scenario.
+
+    `lineage_id` groups successive versions of the same scenario; `version` is
+    the 1-indexed position within that lineage (PID amendment 1.5).
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -126,3 +197,5 @@ class TCOScenarioRead(BaseModel):
     assumptions: list[str]
     warnings: list[str]
     created_at: datetime
+    lineage_id: str
+    version: int

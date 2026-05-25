@@ -41,11 +41,20 @@ async def create_report(
     if project is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Project not found")
 
-    tco_scenarios, comparisons, advisor_sections, unresolved = (
-        await report_service.resolve_artifacts(db, project_id, payload.artifacts)
-    )
+    (
+        tco_scenarios,
+        comparisons,
+        advisor_sections,
+        tco_comparisons,
+        unresolved,
+    ) = await report_service.resolve_artifacts(db, project_id, payload.artifacts)
     html = render_report(
-        project, tco_scenarios, comparisons, advisor_sections, unresolved
+        project,
+        tco_scenarios,
+        comparisons,
+        advisor_sections,
+        unresolved,
+        tco_comparisons,
     )
     pdf_bytes = await pdf.generate_pdf(html)
 
@@ -100,11 +109,20 @@ async def download_report(
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Report not found")
 
     artifacts = [ReportArtifact(**a) for a in report.included_artifacts]
-    tco_scenarios, comparisons, advisor_sections, unresolved = (
-        await report_service.resolve_artifacts(db, project_id, artifacts)
-    )
+    (
+        tco_scenarios,
+        comparisons,
+        advisor_sections,
+        tco_comparisons,
+        unresolved,
+    ) = await report_service.resolve_artifacts(db, project_id, artifacts)
     html = render_report(
-        project, tco_scenarios, comparisons, advisor_sections, unresolved
+        project,
+        tco_scenarios,
+        comparisons,
+        advisor_sections,
+        unresolved,
+        tco_comparisons,
     )
     pdf_bytes = await pdf.generate_pdf(html)
 

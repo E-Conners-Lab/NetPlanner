@@ -136,8 +136,16 @@ function WarningsBanner({ warnings }) {
  * @param {string}   saveError   — backend error message from save call
  * @param {boolean}  saved       — true once save succeeds (shows confirmation)
  * @param {function} onSave      — called when user clicks "Save scenario"
+ * @param {string}   [saveLabel] — overrides the default "Save scenario" CTA label
  */
-export default function TcoResultsPanel({ result, saving, saveError, saved, onSave }) {
+export default function TcoResultsPanel({
+  result,
+  saving,
+  saveError,
+  saved,
+  onSave,
+  saveLabel,
+}) {
   const [showAssumptions, setShowAssumptions] = useState(false);
 
   return (
@@ -216,7 +224,7 @@ export default function TcoResultsPanel({ result, saving, saveError, saved, onSa
         ) : (
           <div className="flex items-center justify-end">
             <Button variant="primary" onClick={onSave} disabled={saving}>
-              {saving ? 'Saving…' : 'Save scenario'}
+              {saving ? 'Saving…' : saveLabel || 'Save scenario'}
             </Button>
           </div>
         )}

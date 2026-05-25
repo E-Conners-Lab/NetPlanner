@@ -320,6 +320,31 @@ hallucinate a number.
 
 - **recharts 2 → 3** (commit `db8ca22`, verified 2026-05-19). `TcoChart` (the only recharts component) renders intact under v3 — stacked `BarChart`, axes, grid, legend, and the custom `TcoTooltip` all work without code changes. Verified by rendering the component in headless Chromium with representative 5-year data: 0 console errors, tooltip payload still exposes `entry.fill`/`name`/`value`/`dataKey`, computed total row correct. No follow-up required.
 
+### Phase 7 — Mid-cycle refresh + version snapshots + TCO comparison
+
+**Approved as PID amendment 1.5 (2026-05-25).** Closed the "what about phased refresh inside the lifecycle?" gap surfaced in a stakeholder conversation, and added version snapshots so an existing scenario can be revised without overwriting the artifact that was already shared with finance.
+
+**Shipped (additive, no breaking changes):**
+
+- **Refresh events.** `TCOFormInputs.refresh_events: list[RefreshEvent]` (default `[]`). Each event carries `year` ∈ [2, 5], `percent_of_devices` ∈ (0, 100], and an optional `cost_per_unit_override`. The deterministic engine adds a `refresh_hardware` line in the targeted year only; licensing/support/adjacent recurring stay flat (refreshed units re-use the existing fleet line). Out-of-window events are flagged AND excluded from totals — never silently rolled in.
+- **Version snapshots.** `TCOScenario` gains `lineage_id` (indexed, **not** an FK so a deleted version doesn't cascade through the lineage) and `version` (1-indexed). Saving with `parent_scenario_id` inherits the parent's lineage and increments version; saving without it starts a new lineage anchored to the row's own id. The Alembic migration (`a3d1f7c52e84`) backfills every existing row to `lineage_id = id, version = 1` — pre-amendment scenarios become v1 of their own single-version lineage.
+- **Convenience route.** `GET /projects/{id}/tco/lineages/{lineage_id}` returns the version history scoped to the project (SEC-27 — cross-project access returns `[]`, never reveals existence elsewhere).
+- **Edit-as-version UX.** An "Edit" affordance on a saved scenario opens the form pre-filled and threads `parent_scenario_id` through the next save automatically — the user never has to choose "new vs. version", and the existing scenario row stays intact.
+- **Dashboard grouping.** The TCO page groups saved scenarios by lineage with a `v3 (3 versions)` badge and collapses history by default after 5 versions to keep noise low.
+- **Screen-first comparison.** A new `TcoCompare` card on the TCO page picks two scenarios (any project, any lineage), overlays them in a Recharts `<LineChart>` with two series, and emits a per-year delta table plus an assumption-diff list. No new backend call — data already in the saved-scenarios listing.
+- **PDF artifact for comparison.** `ReportArtifact` gains a new kind `tco_comparison` with paired `ref_id` + `ref_id_b`. Pydantic rejects same-id or missing pairs. The report renderer adds a side-by-side TCO Comparison block with a 5-year-total delta row.
+- **Report version picker.** Each TCO scenario in the report builder shows its `vN` badge and a `latest` chip for the newest version of each lineage. PDF TCO headers now read `v3 · saved 2026-05-25` so a finance reader can tell which revision they're looking at.
+
+**Issues encountered and fixed:**
+
+| # | Issue | Cause | Fix |
+|---|---|---|---|
+| 7.1 | First Alembic migration failed under SQLite because the new `lineage_id` / `version` columns were `NOT NULL` from the start | SQLite cannot add a NOT NULL column without a server default | Migration now adds them nullable, backfills `lineage_id = id` / `version = 1`, then enforces NOT NULL via `batch_alter_table` |
+| 7.2 | `resolve_artifacts` returned a 4-tuple, callers expected the new comparison list | New `tco_comparison` kind needs its own bucket in the return tuple; both routes that consumed the tuple had to be updated | Switched to a named 5-tuple return + updated `routes/reports.py` (both `create_report` and `download_report`) — caught by the route test for re-download |
+| 7.3 | `_render_tco` test fixtures broke after adding `version` / `created_at` to the PDF header | Tests built `TCOScenario` directly without persisting; ORM defaults don't fire until `INSERT` | Updated the test factory to pass `id`, `lineage_id`, `version`, `created_at` explicitly |
+
+**Quality gate:** 136 backend tests pass (up from 111), coverage at **95.68%** (`app/schemas/tco.py`, `app/services/tco_service.py`, `app/routes/tco.py` each at 100%). All seven PID evals still pass — Eval 1 ($218,000 5-year total) is byte-for-byte unchanged because `refresh_events` defaults to empty. Ruff, black, isort, mypy, bandit, and `alembic check` all clean. Frontend lint + production build clean.
+
 ---
 
 ## 7. Troubleshooting
@@ -350,8 +375,9 @@ hallucinate a number.
 | 4 | Vendor Comparison | ✅ Complete |
 | 5 | Report generation (PDF) | ✅ Complete |
 | 6 | Polish — design, error states, full eval run | ✅ Complete |
+| 7 | Mid-cycle refresh + version snapshots + TCO comparison (PID amendment 1.5) | ✅ Complete |
 
-All six phases complete — NetPlanner v1 is launch-ready (7/7 evals pass).
+NetPlanner v1 cleared the PID acceptance gate (7/7 evals); Phase 7 added the refresh / versioning / comparison capabilities behind PID amendment 1.5 without breaking any existing contract.
 
 ### Planned enhancements (post-v1)
 

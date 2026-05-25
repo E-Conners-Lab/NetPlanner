@@ -3,9 +3,11 @@ import { useParams } from 'react-router-dom';
 import useProject from '../hooks/useProject.js';
 import { previewTco, saveTcoScenario, listTcoScenarios } from '../api/tco.js';
 import Card from '../components/ui/Card.jsx';
+import Button from '../components/ui/Button.jsx';
 import TcoInputForm from '../components/tco/TcoInputForm.jsx';
 import TcoResultsPanel from '../components/tco/TcoResultsPanel.jsx';
 import TcoSavedScenarios from '../components/tco/TcoSavedScenarios.jsx';
+import TcoCompare from '../components/tco/TcoCompare.jsx';
 
 /** Extracts a user-facing message from an Axios error */
 function extractErrorMessage(err, fallback) {
@@ -37,6 +39,12 @@ export default function TCO() {
   /* id of the currently-displayed saved scenario, if any — drives the
    * selected-row highlight in `TcoSavedScenarios`. */
   const [selectedScenarioId, setSelectedScenarioId] = useState(null);
+
+  /* PID amendment 1.5 — when the user clicks "Edit as new version" on a saved
+   * scenario, we pre-fill the form and remember the source scenario so the
+   * next save submits with `parent_scenario_id`. */
+  const [formInitial, setFormInitial] = useState(null);
+  const [editingParent, setEditingParent] = useState(null);
 
   /* ── Saved scenarios state ───────────────────────────────────── */
   const [scenarios, setScenarios] = useState([]);
@@ -99,6 +107,30 @@ export default function TCO() {
     setLastBody(null);
   };
 
+  /* PID amendment 1.5 — start editing a saved scenario as a new version. */
+  const handleEditAsNewVersion = (scenario) => {
+    setFormInitial(scenario);
+    setEditingParent(scenario);
+    setPreview(null);
+    setSaved(false);
+    setSaveError(null);
+    setCalcError(null);
+    setLastBody(null);
+    setSelectedScenarioId(null);
+    // Scroll the form into view so the user immediately sees the pre-fill.
+    if (typeof window !== 'undefined') {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  };
+
+  const handleCancelEdit = () => {
+    setFormInitial(null);
+    setEditingParent(null);
+    setCalcError(null);
+    setLastBody(null);
+    setPreview(null);
+  };
+
   /* ── Save scenario ───────────────────────────────────────────── */
   const handleSave = async () => {
     if (!lastBody) return;
@@ -107,8 +139,13 @@ export default function TCO() {
     setSaveError(null);
 
     try {
-      await saveTcoScenario(id, lastBody);
+      const body = editingParent
+        ? { ...lastBody, parent_scenario_id: editingParent.id }
+        : lastBody;
+      await saveTcoScenario(id, body);
       setSaved(true);
+      setEditingParent(null);
+      setFormInitial(null);
       await loadScenarios();
     } catch (err) {
       setSaveError(extractErrorMessage(err, 'Failed to save scenario. Please try again.'));
@@ -123,6 +160,18 @@ export default function TCO() {
     : projectError
       ? 'Unknown project'
       : project?.name ?? '';
+
+  /* Next-version label for the editing banner. We compute it from the
+   * current saved-scenarios list so it stays accurate even if a sibling
+   * version was just saved. */
+  const nextVersion = editingParent
+    ? Math.max(
+        ...scenarios
+          .filter((s) => (s.lineage_id ?? s.id) === editingParent.lineage_id)
+          .map((s) => s.version ?? 1),
+        editingParent.version ?? 1,
+      ) + 1
+    : null;
 
   return (
     <div className="max-w-4xl mx-auto space-y-6">
@@ -147,9 +196,35 @@ export default function TCO() {
         </div>
       )}
 
+      {/* PID amendment 1.5 — editing-as-new-version banner */}
+      {editingParent && (
+        <div className="rounded-lg border border-accent/30 bg-accent/8 px-4 py-3 flex items-start justify-between gap-4">
+          <div>
+            <p className="text-sm text-text">
+              Editing <span className="font-medium">{editingParent.scenario_name}</span>
+              {' '}— saving creates{' '}
+              <span className="font-mono text-accent">v{nextVersion}</span>{' '}
+              in this lineage. The original is preserved.
+            </p>
+            <p className="text-xs text-textMuted mt-1">
+              Form pre-filled from v{editingParent.version ?? 1}. Adjust any input below.
+            </p>
+          </div>
+          <Button variant="secondary" onClick={handleCancelEdit} disabled={calculating || saving}>
+            Cancel edit
+          </Button>
+        </div>
+      )}
+
       {/* Input form */}
-      <Card title="Cost Inputs">
-        <TcoInputForm onCalculate={handleCalculate} calculating={calculating} />
+      <Card title={editingParent ? `Edit Inputs — v${editingParent.version ?? 1}` : 'Cost Inputs'}>
+        <TcoInputForm
+          key={editingParent?.id ?? 'fresh'}
+          onCalculate={handleCalculate}
+          calculating={calculating}
+          initialValues={formInitial}
+          submitLabel={editingParent ? 'Recalculate' : null}
+        />
 
         {calcError && (
           <div className="mt-4 rounded-lg border border-red-500/20 bg-red-500/8 px-4 py-3">
@@ -166,6 +241,7 @@ export default function TCO() {
           saveError={saveError}
           saved={saved}
           onSave={handleSave}
+          saveLabel={editingParent ? `Save as v${nextVersion}` : 'Save scenario'}
         />
       )}
 
@@ -175,8 +251,12 @@ export default function TCO() {
         loading={scenariosLoading}
         error={scenariosError}
         onSelect={handleSelectScenario}
+        onEdit={handleEditAsNewVersion}
         selectedId={selectedScenarioId}
       />
+
+      {/* PID amendment 1.5 — screen-first comparison view */}
+      <TcoCompare scenarios={scenarios} />
     </div>
   );
 }

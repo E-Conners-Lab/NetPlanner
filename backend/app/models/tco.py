@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Float, ForeignKey, String
+from sqlalchemy import Float, ForeignKey, Integer, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
@@ -20,7 +20,14 @@ if TYPE_CHECKING:  # pragma: no cover - typing only
 
 
 class TCOScenario(Base, TimestampMixin):
-    """A saved TCO scenario belonging to a project."""
+    """A saved TCO scenario belonging to a project.
+
+    Versioning (PID amendment 1.5): `lineage_id` groups successive snapshots of
+    the same scenario; `version` is the 1-indexed position in that lineage.
+    `lineage_id` is intentionally a plain indexed column, *not* a foreign key —
+    deleting any row in the lineage must not cascade-delete the others, and
+    grouping by lineage stays a single indexed equality lookup.
+    """
 
     __tablename__ = "tco_scenarios"
 
@@ -38,5 +45,9 @@ class TCOScenario(Base, TimestampMixin):
     assumptions: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     # Reasonableness / cascade warnings surfaced to the UI (PIS-20, PIS-21).
     warnings: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+
+    # PID amendment 1.5 — version snapshot grouping.
+    lineage_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
 
     project: Mapped[Project] = relationship(back_populates="tco_scenarios")

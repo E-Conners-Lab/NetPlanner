@@ -101,6 +101,110 @@ async def test_tco_on_missing_project_returns_404(client: AsyncClient) -> None:
     assert resp.status_code == 404
 
 
+# ---------------------------------------------------------------------------
+# PID amendment 1.5 — versioning + refresh events + lineage convenience route
+# ---------------------------------------------------------------------------
+
+
+async def test_tco_save_without_parent_starts_new_lineage(client: AsyncClient) -> None:
+    project = (await client.post("/api/projects", json={"name": "Lineage"})).json()
+
+    saved = await client.post(f"/api/projects/{project['id']}/tco", json=_TCO_BODY)
+    body = saved.json()
+
+    assert body["version"] == 1
+    assert body["lineage_id"] == body["id"]
+
+
+async def test_tco_save_with_parent_creates_next_version(client: AsyncClient) -> None:
+    project = (await client.post("/api/projects", json={"name": "Versions"})).json()
+
+    v1 = (
+        await client.post(f"/api/projects/{project['id']}/tco", json=_TCO_BODY)
+    ).json()
+    v2_body = {**_TCO_BODY, "parent_scenario_id": v1["id"]}
+    v2 = (await client.post(f"/api/projects/{project['id']}/tco", json=v2_body)).json()
+
+    assert v2["lineage_id"] == v1["lineage_id"]
+    assert v2["version"] == 2
+    assert v2["id"] != v1["id"]
+
+
+async def test_tco_save_with_parent_in_other_project_returns_404(
+    client: AsyncClient,
+) -> None:
+    """Parent-scenario references must not cross project boundaries (SEC-27)."""
+    project_a = (await client.post("/api/projects", json={"name": "A"})).json()
+    project_b = (await client.post("/api/projects", json={"name": "B"})).json()
+    v1_a = (
+        await client.post(f"/api/projects/{project_a['id']}/tco", json=_TCO_BODY)
+    ).json()
+
+    cross = await client.post(
+        f"/api/projects/{project_b['id']}/tco",
+        json={**_TCO_BODY, "parent_scenario_id": v1_a["id"]},
+    )
+    assert cross.status_code == 404
+
+
+async def test_tco_lineage_route_returns_full_version_history(
+    client: AsyncClient,
+) -> None:
+    project = (await client.post("/api/projects", json={"name": "History"})).json()
+
+    v1 = (
+        await client.post(f"/api/projects/{project['id']}/tco", json=_TCO_BODY)
+    ).json()
+    (
+        await client.post(
+            f"/api/projects/{project['id']}/tco",
+            json={**_TCO_BODY, "parent_scenario_id": v1["id"]},
+        )
+    ).json()
+
+    history = (
+        await client.get(
+            f"/api/projects/{project['id']}/tco/lineages/{v1['lineage_id']}"
+        )
+    ).json()
+
+    assert [row["version"] for row in history] == [1, 2]
+
+
+async def test_tco_lineage_route_does_not_leak_across_projects(
+    client: AsyncClient,
+) -> None:
+    project_a = (await client.post("/api/projects", json={"name": "A"})).json()
+    project_b = (await client.post("/api/projects", json={"name": "B"})).json()
+    v1_a = (
+        await client.post(f"/api/projects/{project_a['id']}/tco", json=_TCO_BODY)
+    ).json()
+
+    cross = await client.get(
+        f"/api/projects/{project_b['id']}/tco/lineages/{v1_a['lineage_id']}"
+    )
+    assert cross.status_code == 200
+    assert cross.json() == []
+
+
+async def test_tco_refresh_event_round_trips_through_save(client: AsyncClient) -> None:
+    project = (await client.post("/api/projects", json={"name": "Refresh"})).json()
+
+    body = {
+        "scenario_name": "Phased refresh",
+        "inputs": {
+            **_TCO_BODY["inputs"],
+            "refresh_events": [{"year": 3, "percent_of_devices": 25}],
+        },
+    }
+    saved = (await client.post(f"/api/projects/{project['id']}/tco", json=body)).json()
+
+    # The Year-3 refresh hardware figure round-trips through persistence.
+    assert saved["year_by_year"][2]["refresh_hardware"] == 200 * 0.25 * 600
+    # And shows up in the assumptions.
+    assert any("Year 3 refresh" in line for line in saved["assumptions"])
+
+
 async def test_comparison_generate_and_list(
     client: AsyncClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:

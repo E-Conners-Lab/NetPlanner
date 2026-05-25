@@ -41,6 +41,7 @@ _CONFIDENCE_CLASS = {
 # breakdown introduced in PID amendment 1.3.
 _TCO_COLUMNS: list[tuple[str, str]] = [
     ("hardware", "Hardware"),
+    ("refresh_hardware", "Refresh hardware"),
     ("spares", "Spares"),
     ("accessories", "Accessories"),
     ("installation", "Installation"),
@@ -138,6 +139,7 @@ def _render_tco(scenario: TCOScenario) -> str:
     span = len(years)
 
     # Only categories with a non-zero value in some year are shown.
+    # Refresh hardware (PID amendment 1.5) joins the regular columns when used.
     active_rows = [
         (key, label)
         for key, label in _TCO_COLUMNS
@@ -180,8 +182,16 @@ def _render_tco(scenario: TCOScenario) -> str:
         else ""
     )
 
+    # PID amendment 1.5 — surface which version of the lineage this scenario is
+    # and when it was saved, so a stakeholder reading the PDF knows whether they
+    # are looking at the latest revision.
+    version_label = (
+        f"v{scenario.version} · saved " f"{scenario.created_at.date().isoformat()}"
+    )
+
     return (
         f"<h2>TCO Scenario — {escape(scenario.scenario_name)}</h2>"
+        f"<p class='muted'>{escape(version_label)}</p>"
         f"<table><thead>{head}</thead>"
         f"<tbody>{''.join(body_rows)}{totals_row}</tbody></table>"
         f"<h3>Assumptions</h3><ul class='assumptions'>{assumptions}</ul>"
@@ -237,12 +247,80 @@ def _render_advisor(title: str, messages: list[Message]) -> str:
     return f"<h2>Advisor Summary — {escape(title)}</h2>{''.join(blocks)}"
 
 
+def _short_label(scenario: TCOScenario) -> str:
+    """Compact human label for a saved scenario (PID amendment 1.5)."""
+    return f"{scenario.scenario_name} · v{scenario.version}"
+
+
+def _signed_money(value: float) -> str:
+    """Format a delta as a signed currency string (e.g. +$1,200, −$300)."""
+    if value == 0:
+        return _money(0)
+    formatted = _money(abs(value))
+    return f"+{formatted}" if value > 0 else f"−{formatted}"
+
+
+def _render_tco_comparison(a: TCOScenario, b: TCOScenario) -> str:
+    """Render a side-by-side comparison of two saved TCO scenarios.
+
+    PID amendment 1.5 — the comparison artifact. The PDF mirrors the screen-side
+    view: per-year totals with a delta column, then a 5-year total row. We do
+    not try to diff per-category inside the PDF (the screen does); finance
+    stakeholders read the bottom line first.
+    """
+    years_a = {int(y.get("year", 0)): y for y in (a.year_by_year or [])}
+    years_b = {int(y.get("year", 0)): y for y in (b.year_by_year or [])}
+    all_years = sorted(set(years_a) | set(years_b))
+
+    head = (
+        "<tr>"
+        "<th>Year</th>"
+        f"<th class='num'>{escape(_short_label(a))}</th>"
+        f"<th class='num'>{escape(_short_label(b))}</th>"
+        "<th class='num'>Delta (B−A)</th>"
+        "</tr>"
+    )
+
+    body_rows: list[str] = []
+    for year in all_years:
+        va = float((years_a.get(year) or {}).get("total", 0) or 0)
+        vb = float((years_b.get(year) or {}).get("total", 0) or 0)
+        delta = vb - va
+        body_rows.append(
+            f"<tr><td>Year {year}</td>"
+            f"<td class='num'>{_money(va)}</td>"
+            f"<td class='num'>{_money(vb)}</td>"
+            f"<td class='num'>{_signed_money(delta)}</td></tr>"
+        )
+
+    total_a = float(a.total_5yr or 0)
+    total_b = float(b.total_5yr or 0)
+    total_delta = total_b - total_a
+    totals_row = (
+        f"<tr class='total-row'><td>5-year total</td>"
+        f"<td class='num'>{_money(total_a)}</td>"
+        f"<td class='num'>{_money(total_b)}</td>"
+        f"<td class='num'>{_signed_money(total_delta)}</td></tr>"
+    )
+
+    title = (
+        f"TCO Comparison — {a.scenario_name} v{a.version} "
+        f"vs {b.scenario_name} v{b.version}"
+    )
+    return (
+        f"<h2>{escape(title)}</h2>"
+        f"<table><thead>{head}</thead>"
+        f"<tbody>{''.join(body_rows)}{totals_row}</tbody></table>"
+    )
+
+
 def render_report(
     project: Project,
     tco_scenarios: list[TCOScenario],
     comparisons: list[VendorComparison],
     advisor_sections: list[tuple[str, list[Message]]],
     unresolved: list[str],
+    tco_comparisons: list[tuple[TCOScenario, TCOScenario]] | None = None,
 ) -> str:
     """Assemble a project's artifacts into a complete report HTML document.
 
@@ -254,12 +332,17 @@ def render_report(
         unresolved: Descriptions of requested artifacts that could not be
             resolved — surfaced as an explicit notice rather than dropped
             silently (PIS-20).
+        tco_comparisons: Pairs of saved TCO scenarios to render as a
+            side-by-side comparison (PID amendment 1.5). Optional and
+            defaulted so older callers that resolved without this fifth tuple
+            element continue to work.
 
     Returns:
         str: A complete HTML document ready for the WeasyPrint PDF service.
     """
     sections = [_render_project_overview(project)]
     sections += [_render_tco(s) for s in tco_scenarios]
+    sections += [_render_tco_comparison(a, b) for a, b in (tco_comparisons or [])]
     sections += [_render_comparison(c) for c in comparisons]
     sections += [_render_advisor(title, msgs) for title, msgs in advisor_sections]
 

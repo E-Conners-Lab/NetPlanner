@@ -19,11 +19,13 @@ from app.schemas.report import ReportArtifact
 from app.services import comparison_service, conversation_service, tco_service
 
 # Resolved artifacts: TCO scenarios, comparisons, (conversation title, messages)
-# pairs, and human-readable descriptions of anything that could not be resolved.
+# pairs, TCO-scenario comparison pairs (PID amendment 1.5), and human-readable
+# descriptions of anything that could not be resolved.
 ResolvedArtifacts = tuple[
     list[TCOScenario],
     list[VendorComparison],
     list[tuple[str, list[Message]]],
+    list[tuple[TCOScenario, TCOScenario]],
     list[str],
 ]
 
@@ -35,6 +37,7 @@ async def resolve_artifacts(
     tco_scenarios: list[TCOScenario] = []
     comparisons: list[VendorComparison] = []
     advisor_sections: list[tuple[str, list[Message]]] = []
+    tco_comparisons: list[tuple[TCOScenario, TCOScenario]] = []
     unresolved: list[str] = []
 
     for artifact in artifacts:
@@ -59,8 +62,36 @@ async def resolve_artifacts(
                 advisor_sections.append((conversation.title, messages))
             else:
                 unresolved.append(f"Advisor conversation {artifact.ref_id} (not found)")
+        elif artifact.kind == "tco_comparison":
+            scenario_a = await tco_service.get_scenario(db, artifact.ref_id)
+            scenario_b = (
+                await tco_service.get_scenario(db, artifact.ref_id_b)
+                if artifact.ref_id_b
+                else None
+            )
+            both_resolved = (
+                scenario_a is not None
+                and scenario_b is not None
+                and scenario_a.project_id == project_id
+                and scenario_b.project_id == project_id
+            )
+            if both_resolved:
+                # Type checker sees the None-narrowing through `both_resolved`.
+                assert scenario_a is not None and scenario_b is not None
+                tco_comparisons.append((scenario_a, scenario_b))
+            else:
+                unresolved.append(
+                    f"TCO comparison {artifact.ref_id} vs "
+                    f"{artifact.ref_id_b} (not found)"
+                )
 
-    return tco_scenarios, comparisons, advisor_sections, unresolved
+    return (
+        tco_scenarios,
+        comparisons,
+        advisor_sections,
+        tco_comparisons,
+        unresolved,
+    )
 
 
 async def save_report(

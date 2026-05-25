@@ -28,6 +28,57 @@ const EMPTY_VALUES = {
   adjacent_recurring_cost_per_year: '',
 };
 
+/** PID amendment 1.5 — refresh-event row blanks (kept as strings until submit). */
+const EMPTY_REFRESH_EVENT = { year: '3', percent_of_devices: '', cost_per_unit_override: '' };
+
+/** Convert a saved scenario's inputs back into the string form-state shape. */
+function buildInitialValues(initial) {
+  if (!initial) return EMPTY_VALUES;
+  const inputs = initial.inputs || {};
+  const str = (v) => (v === null || v === undefined || v === 0 ? '' : String(v));
+  return {
+    scenario_name: initial.scenario_name ?? '',
+    device_count: str(inputs.device_count),
+    hardware_cost_per_unit: str(inputs.hardware_cost_per_unit),
+    licensing_cost_per_unit_year: str(inputs.licensing_cost_per_unit_year),
+    support_cost_year_one: str(inputs.support_cost_year_one),
+    lifecycle_years: String(inputs.lifecycle_years ?? 5),
+    device_category: inputs.device_category ?? 'access_point',
+    installation_cost: str(inputs.installation_cost),
+    accessories_cost_per_unit: str(inputs.accessories_cost_per_unit),
+    spares_percent: str(inputs.spares_percent),
+    training_cost: str(inputs.training_cost),
+    support_cost_recurring_per_year: str(inputs.support_cost_recurring_per_year),
+    adjacent_recurring_cost_per_year: str(inputs.adjacent_recurring_cost_per_year),
+  };
+}
+
+function buildInitialRefreshEvents(initial) {
+  if (!initial?.inputs?.refresh_events) return [];
+  return initial.inputs.refresh_events.map((event) => ({
+    year: String(event.year ?? 3),
+    percent_of_devices: event.percent_of_devices != null ? String(event.percent_of_devices) : '',
+    cost_per_unit_override:
+      event.cost_per_unit_override != null ? String(event.cost_per_unit_override) : '',
+  }));
+}
+
+/** True when the initial values populate any field that lives under "Advanced". */
+function initialValuesHaveAdvancedData(initial) {
+  if (!initial?.inputs) return false;
+  const inputs = initial.inputs;
+  const advancedNumeric = [
+    inputs.installation_cost,
+    inputs.accessories_cost_per_unit,
+    inputs.spares_percent,
+    inputs.training_cost,
+    inputs.support_cost_recurring_per_year,
+    inputs.adjacent_recurring_cost_per_year,
+  ];
+  if (advancedNumeric.some((n) => Number(n) > 0)) return true;
+  return Array.isArray(inputs.refresh_events) && inputs.refresh_events.length > 0;
+}
+
 /** Fields that are non-negative-number-or-blank (blank → 0). */
 const OPTIONAL_NONNEG_FIELDS = [
   'support_cost_year_one',
@@ -41,13 +92,31 @@ const OPTIONAL_NONNEG_FIELDS = [
 /**
  * TcoInputForm — collects TCO inputs with inline client-side validation.
  *
- * @param {function} onCalculate  — called with { scenario_name, inputs } on valid submit
- * @param {boolean}  calculating  — disables the form while the preview request is in-flight
+ * `initialValues` (optional) pre-fills the form when re-opening it on a saved
+ * scenario for "save as new version" (PID amendment 1.5).
+ *
+ * @param {function} onCalculate    — called with { scenario_name, inputs } on valid submit
+ * @param {boolean}  calculating    — disables the form while the preview request is in-flight
+ * @param {object}   [initialValues] — optional pre-fill from a saved scenario
+ * @param {string}   [submitLabel]   — overrides the submit button label
  */
-export default function TcoInputForm({ onCalculate, calculating = false }) {
-  const [values, setValues] = useState(EMPTY_VALUES);
+export default function TcoInputForm({
+  onCalculate,
+  calculating = false,
+  initialValues = null,
+  submitLabel = null,
+}) {
+  const [values, setValues] = useState(() => buildInitialValues(initialValues));
+  const [refreshEvents, setRefreshEvents] = useState(() =>
+    buildInitialRefreshEvents(initialValues)
+  );
   const [fieldErrors, setFieldErrors] = useState({});
-  const [showAdvanced, setShowAdvanced] = useState(false);
+  const [refreshErrors, setRefreshErrors] = useState({});
+  // Open Advanced by default when pre-fill has any advanced data, so the
+  // user can see the inherited refresh events without an extra click.
+  const [showAdvanced, setShowAdvanced] = useState(() =>
+    initialValuesHaveAdvancedData(initialValues)
+  );
 
   /* Immutable field update — clears the field error on change */
   const handleChange = (field) => (e) => {
@@ -56,6 +125,21 @@ export default function TcoInputForm({ onCalculate, calculating = false }) {
       setFieldErrors((prev) => ({ ...prev, [field]: undefined }));
     }
   };
+
+  /* Refresh-event row helpers — immutable updates only. */
+  const updateRefreshEvent = (index, field, raw) => {
+    setRefreshEvents((prev) =>
+      prev.map((row, i) => (i === index ? { ...row, [field]: raw } : row))
+    );
+    const errorKey = `${index}.${field}`;
+    if (refreshErrors[errorKey]) {
+      setRefreshErrors((prev) => ({ ...prev, [errorKey]: undefined }));
+    }
+  };
+  const addRefreshEvent = () =>
+    setRefreshEvents((prev) => [...prev, { ...EMPTY_REFRESH_EVENT }]);
+  const removeRefreshEvent = (index) =>
+    setRefreshEvents((prev) => prev.filter((_, i) => i !== index));
 
   const validate = () => {
     const errors = {};
@@ -116,6 +200,30 @@ export default function TcoInputForm({ onCalculate, calculating = false }) {
     return errors;
   };
 
+  /** PID amendment 1.5 — validate the refresh-event rows. */
+  const validateRefreshEvents = () => {
+    const errs = {};
+    refreshEvents.forEach((row, i) => {
+      const year = Number(row.year);
+      if (!Number.isInteger(year) || year < 2 || year > 5) {
+        errs[`${i}.year`] = 'Refresh year must be 2-5.';
+      }
+      const pct = Number(row.percent_of_devices);
+      if (row.percent_of_devices === '' || row.percent_of_devices.trim?.() === '') {
+        errs[`${i}.percent_of_devices`] = 'Percent of fleet is required.';
+      } else if (Number.isNaN(pct) || pct <= 0 || pct > 100) {
+        errs[`${i}.percent_of_devices`] = 'Percent must be 0 < pct ≤ 100.';
+      }
+      if (row.cost_per_unit_override !== '' && row.cost_per_unit_override.trim?.() !== '') {
+        const c = Number(row.cost_per_unit_override);
+        if (Number.isNaN(c) || c < 0) {
+          errs[`${i}.cost_per_unit_override`] = 'Must be a number ≥ 0.';
+        }
+      }
+    });
+    return errs;
+  };
+
   /** Convert a possibly-blank string field to a finite number, defaulting to 0. */
   const numOrZero = (raw) =>
     raw !== '' && raw.trim() !== '' ? parseFloat(raw) : 0;
@@ -124,8 +232,10 @@ export default function TcoInputForm({ onCalculate, calculating = false }) {
     e.preventDefault();
 
     const errors = validate();
-    if (Object.keys(errors).length > 0) {
+    const refreshErrs = validateRefreshEvents();
+    if (Object.keys(errors).length > 0 || Object.keys(refreshErrs).length > 0) {
       setFieldErrors(errors);
+      setRefreshErrors(refreshErrs);
       return;
     }
 
@@ -145,6 +255,17 @@ export default function TcoInputForm({ onCalculate, calculating = false }) {
         training_cost: numOrZero(values.training_cost),
         support_cost_recurring_per_year: numOrZero(values.support_cost_recurring_per_year),
         adjacent_recurring_cost_per_year: numOrZero(values.adjacent_recurring_cost_per_year),
+        // PID amendment 1.5 — mid-cycle refresh events.
+        refresh_events: refreshEvents.map((row) => {
+          const event = {
+            year: parseInt(row.year, 10),
+            percent_of_devices: parseFloat(row.percent_of_devices),
+          };
+          if (row.cost_per_unit_override !== '' && row.cost_per_unit_override.trim?.() !== '') {
+            event.cost_per_unit_override = parseFloat(row.cost_per_unit_override);
+          }
+          return event;
+        }),
       },
     };
 
@@ -366,13 +487,110 @@ export default function TcoInputForm({ onCalculate, calculating = false }) {
                 error={fieldErrors.adjacent_recurring_cost_per_year}
               />
             </div>
+
+            {/* PID amendment 1.5 — mid-cycle refresh events. */}
+            <div className="pt-2">
+              <p className="text-xs font-semibold text-textMuted mb-2">
+                Mid-cycle hardware refreshes
+              </p>
+              <p className="text-xs text-textMuted/80 mb-3">
+                Optional. Model phased refresh events inside the lifecycle
+                (e.g. swap 25% of APs in Year 3). Refreshed units re-use
+                existing licensing — only the hardware spend is added.
+              </p>
+
+              {refreshEvents.length === 0 && (
+                <p className="text-xs text-textMuted/60 mb-2">
+                  No refresh events. Click <span className="text-textMuted">Add refresh</span> to model one.
+                </p>
+              )}
+
+              <div className="flex flex-col gap-3">
+                {refreshEvents.map((row, i) => (
+                  <div
+                    key={i}
+                    className="grid grid-cols-1 sm:grid-cols-[100px_140px_1fr_auto] gap-3 items-end"
+                  >
+                    <div className="flex flex-col gap-1">
+                      <label
+                        htmlFor={`refresh-year-${i}`}
+                        className="text-xs font-medium text-textMuted"
+                      >
+                        Year (2–5)
+                      </label>
+                      <select
+                        id={`refresh-year-${i}`}
+                        value={row.year}
+                        onChange={(e) => updateRefreshEvent(i, 'year', e.target.value)}
+                        disabled={calculating}
+                        className={selectBase}
+                      >
+                        {[2, 3, 4, 5].map((yr) => (
+                          <option key={yr} value={String(yr)}>
+                            {yr}
+                          </option>
+                        ))}
+                      </select>
+                      {refreshErrors[`${i}.year`] && (
+                        <p className="text-xs text-red-400">{refreshErrors[`${i}.year`]}</p>
+                      )}
+                    </div>
+
+                    <Input
+                      label="% of fleet"
+                      id={`refresh-percent-${i}`}
+                      type="number"
+                      placeholder="e.g. 25"
+                      value={row.percent_of_devices}
+                      onChange={(e) => updateRefreshEvent(i, 'percent_of_devices', e.target.value)}
+                      disabled={calculating}
+                      error={refreshErrors[`${i}.percent_of_devices`]}
+                    />
+
+                    <Input
+                      label="Cost / unit override (USD, optional)"
+                      id={`refresh-cost-${i}`}
+                      type="number"
+                      placeholder="Blank = use original hardware cost"
+                      value={row.cost_per_unit_override}
+                      onChange={(e) =>
+                        updateRefreshEvent(i, 'cost_per_unit_override', e.target.value)
+                      }
+                      disabled={calculating}
+                      error={refreshErrors[`${i}.cost_per_unit_override`]}
+                    />
+
+                    <button
+                      type="button"
+                      onClick={() => removeRefreshEvent(i)}
+                      disabled={calculating}
+                      className="self-end text-xs text-textMuted hover:text-red-400 transition-colors duration-150 px-2 py-2"
+                      aria-label={`Remove refresh event ${i + 1}`}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+
+              <div className="mt-3">
+                <button
+                  type="button"
+                  onClick={addRefreshEvent}
+                  disabled={calculating}
+                  className="text-xs font-medium text-accent hover:text-accent/80 transition-colors duration-150 focus:outline-none disabled:opacity-40"
+                >
+                  + Add refresh
+                </button>
+              </div>
+            </div>
           </div>
         )}
       </div>
 
       <div className="flex items-center justify-end pt-2">
         <Button variant="primary" type="submit" disabled={calculating}>
-          {calculating ? 'Calculating…' : 'Calculate TCO'}
+          {calculating ? 'Calculating…' : submitLabel || 'Calculate TCO'}
         </Button>
       </div>
     </form>
