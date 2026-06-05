@@ -18,6 +18,10 @@ RUN npm run build
 # ── Stage 2: Production ────────────────────────────────────────
 FROM nginx:1.27-alpine AS production
 
+# Patch base OS packages (openssl, expat, …) to clear fixable CVEs the pinned
+# base tag ships behind (SEC-31). Re-runs on every rebuild for fresh fixes.
+RUN apk upgrade --no-cache
+
 # Remove the default nginx config
 RUN rm /etc/nginx/conf.d/default.conf
 
