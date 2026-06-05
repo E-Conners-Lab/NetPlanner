@@ -46,3 +46,6 @@ AGENTS.md
 dist/
 build/
 *.log
+
+# --- Local-only docs (not part of the published project) ---
+docs/netplanner-playground.html
