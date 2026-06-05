@@ -2,7 +2,9 @@
 
 Responses are Server-Sent Events (`text/event-stream`). Each event is a JSON
 payload: ``{"type": "token", "content": ...}`` for response chunks,
-``{"type": "done", "conversation_id": ...}`` at the end, or
+``{"type": "replace", "content": ...}`` to overwrite the turn's text (used
+when the safety classifier blocks the output — the raw provider text is
+discarded), ``{"type": "done", "conversation_id": ...}`` at the end, or
 ``{"type": "error", "content": ...}`` on failure.
 """
 
@@ -17,6 +19,8 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.advisor import (
+    REFUSAL_NOTICE,
+    AdvisorRefusalError,
     project_context_is_sufficient,
     stream_advisor_turn,
 )
@@ -119,6 +123,16 @@ async def advisor_turn(
                 yield _sse({"type": "token", "content": chunk})
             await conversation_service.add_message(
                 db, conversation_id, "assistant", "".join(collected)
+            )
+            yield _sse({"type": "done", "conversation_id": conversation_id})
+        except AdvisorRefusalError:
+            # The safety classifier blocked the output. Replace any partially
+            # streamed provider text with a clean notice (the raw block wording
+            # is logged server-side in the agent, never shown to the user), and
+            # persist the notice so the saved transcript stays clean.
+            yield _sse({"type": "replace", "content": REFUSAL_NOTICE})
+            await conversation_service.add_message(
+                db, conversation_id, "assistant", REFUSAL_NOTICE
             )
             yield _sse({"type": "done", "conversation_id": conversation_id})
         except Exception:

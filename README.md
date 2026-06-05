@@ -1,5 +1,10 @@
 # NetPlanner
 
+[![CI](https://github.com/E-Conners-Lab/NetPlanner/actions/workflows/ci.yml/badge.svg)](https://github.com/E-Conners-Lab/NetPlanner/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Python 3.12](https://img.shields.io/badge/python-3.12-blue.svg)](https://www.python.org/)
+[![React 18](https://img.shields.io/badge/react-18-61dafb.svg)](https://react.dev/)
+
 **AI-powered business decision support for network engineers.**
 
 NetPlanner helps network engineers build Total Cost of Ownership (TCO) models,
@@ -42,6 +47,16 @@ estimates are for planning only — verify with vendors before budget submission
 
 ---
 
+## Screenshots
+
+A visual walkthrough of the Dashboard, AI Advisor, TCO Calculator, and Vendor
+Comparison is in
+[`docs/netplanner-screenshot-carousel.html`](docs/netplanner-screenshot-carousel.html)
+— open it in a browser. To embed static captures inline here, drop them into
+`docs/images/` and reference them in this section.
+
+---
+
 ## Tech Stack
 
 | Layer        | Stack                                                            |
@@ -65,6 +80,10 @@ docker compose up
 
 - Backend / API docs: <http://localhost:8000/docs>
 - Frontend: <http://localhost:5173>
+
+> **First run:** open the frontend and **register an account** at `/register`.
+> All projects, scenarios, and reports are scoped to your login — you'll be
+> redirected to the login screen until you do.
 
 ### Local development (without Docker)
 
@@ -143,7 +162,7 @@ NetPlanner/
 
 **Current status: v1 launched, Phase 7 shipped.** Six launch phases plus
 the PID amendment 1.5 additions (mid-cycle refresh, version snapshots, TCO
-comparison) are complete. **136 backend tests at ~96% coverage**, and **all
+comparison) are complete. **218 backend tests at ~93% coverage**, and **all
 7 PID eval cases still pass** unchanged (the PIS-10 acceptance gate — 6/7
 required, both zero-tolerance evals included). See
 [`docs/RUNBOOK.md`](docs/RUNBOOK.md) for the eval results and the full
@@ -186,7 +205,7 @@ This build follows the Secure Build Standard. Notably:
 - **Transport headers (SEC-08 / SEC-24).** HSTS is sent automatically in
   production; API responses set `Cache-Control: no-store` and a deny-all CSP.
 
-Single-tenant SQLite is the launch default. For multi-user deployments
+Single-instance SQLite is the launch default. For multi-user deployments
 beyond ~50 active operators, point `DATABASE_URL` at Postgres (the migration
 tree is dialect-agnostic).
 
