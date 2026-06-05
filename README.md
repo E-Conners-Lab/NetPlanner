@@ -49,11 +49,45 @@ estimates are for planning only — verify with vendors before budget submission
 
 ## Screenshots
 
-A visual walkthrough of the Dashboard, AI Advisor, TCO Calculator, and Vendor
-Comparison is in
-[`docs/netplanner-screenshot-carousel.html`](docs/netplanner-screenshot-carousel.html)
-— open it in a browser. To embed static captures inline here, drop them into
-`docs/images/` and reference them in this section.
+Real output from the app — not mockups.
+
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/images/dashboard.png"><img src="docs/images/dashboard.png" alt="NetPlanner Dashboard — project list" /></a>
+      <br /><sub><b>Dashboard</b> — one home for every planning project</sub>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/images/advisor.png"><img src="docs/images/advisor.png" alt="AI Advisor — budget narrative" /></a>
+      <br /><sub><b>AI Advisor</b> — a CFO-ready case in plain language</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/images/tco-inputs.png"><img src="docs/images/tco-inputs.png" alt="TCO Calculator inputs" /></a>
+      <br /><sub><b>TCO Calculator</b> — model the true cost, not just the hardware</sub>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/images/tco-result.png"><img src="docs/images/tco-result.png" alt="TCO Calculator five-year result and chart" /></a>
+      <br /><sub><b>TCO Result</b> — e.g. a $180K budget vs. a $389K five-year TCO</sub>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <a href="docs/images/comparison.png"><img src="docs/images/comparison.png" alt="Vendor Comparison matrix with confidence tags" /></a>
+      <br /><sub><b>Vendor Comparison</b> — sourced pricing, tagged <code>confirmed</code> / <code>estimated</code> / <code>unavailable</code></sub>
+    </td>
+    <td width="50%" valign="top">
+      <a href="docs/images/reports.png"><img src="docs/images/reports.png" alt="Exported PDF report" /></a>
+      <br /><sub><b>Reports</b> — export a stakeholder-ready PDF</sub>
+    </td>
+  </tr>
+</table>
+
+> Prefer an animated walkthrough? Open
+> [`docs/netplanner-screenshot-carousel.html`](docs/netplanner-screenshot-carousel.html)
+> in a browser for the interactive carousel (GitHub can't run its JavaScript
+> inline, so the static gallery above is what renders on this page).
 
 ---
 
