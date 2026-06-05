@@ -1,0 +1,49 @@
+# Run NetPlanner from the pre-built GHCR images — no source, no build.
+#
+#   1. Download this file + .env.example into an empty folder
+#   2. cp .env.example .env   and set ANTHROPIC_API_KEY and JWT_SECRET
+#        JWT_SECRET: python -c "import secrets; print(secrets.token_urlsafe(48))"
+#   3. docker compose -f compose.ghcr.yml up -d
+#   4. open http://localhost:8080  (register an account on first run)
+#
+# Pin a release instead of latest:
+#   NETPLANNER_TAG=v1.0.0 docker compose -f compose.ghcr.yml up -d
+name: netplanner
+
+services:
+  backend:
+    image: ghcr.io/e-conners-lab/netplanner-backend:${NETPLANNER_TAG:-latest}
+    # The backend image self-migrates (alembic upgrade head) then starts uvicorn.
+    environment:
+      ENVIRONMENT: production # requires JWT_SECRET; disables /docs
+    env_file:
+      - path: .env # must define ANTHROPIC_API_KEY and JWT_SECRET
+        required: true
+    volumes:
+      - netplanner-data:/app/data # persist the SQLite database across restarts
+    # Not published to the host: the frontend (nginx) is the only entry point
+    # and proxies /api to this service over the compose network.
+    expose:
+      - "8000"
+    healthcheck:
+      # python is in the image; no curl needed. Marks ready once migrations
+      # have run and uvicorn is serving, so the frontend waits for the backend.
+      test:
+        ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+    restart: unless-stopped
+
+  frontend:
+    image: ghcr.io/e-conners-lab/netplanner-frontend:${NETPLANNER_TAG:-latest}
+    ports:
+      - "8080:8080" # open http://localhost:8080
+    depends_on:
+      backend:
+        condition: service_healthy # don't start nginx until the backend is up
+    restart: unless-stopped
+
+volumes:
+  netplanner-data:

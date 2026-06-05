@@ -1,0 +1,104 @@
+# Publish container images to GitHub Container Registry (GHCR).
+#
+# Triggers on a version tag (e.g. `v1.0.0`) or a manual dispatch. Builds the
+# backend and frontend images for linux/amd64 + linux/arm64, scans them with
+# Trivy (SEC-31 — gate on fixable HIGH/CRITICAL), pushes to GHCR, and signs
+# each with cosign (keyless, Sigstore OIDC) alongside SBOM + SLSA provenance.
+#
+# Nothing publishes until you push a `v*` tag or run the workflow manually.
+# After the first publish, make the two packages public in the repo's
+# Packages settings so anonymous `docker pull` works.
+name: Publish images
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Extra image tag to publish (e.g. edge)"
+        required: false
+        default: "edge"
+
+permissions:
+  contents: read
+  packages: write # push to GHCR
+  id-token: write # cosign keyless signing (OIDC)
+  attestations: write # build provenance attestation
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: backend
+            context: ./backend
+            image: ghcr.io/${{ github.repository_owner }}/netplanner-backend
+          - name: frontend
+            context: ./frontend
+            image: ghcr.io/${{ github.repository_owner }}/netplanner-frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3 # arm64 emulation
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Image metadata / tags
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ matrix.image }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest,enable=${{ startsWith(github.ref, 'refs/tags/') }}
+            type=raw,value=${{ github.event.inputs.tag }},enable=${{ github.event_name == 'workflow_dispatch' && github.event.inputs.tag != '' }}
+            type=sha
+
+      # 1) Build a single-arch image locally and gate on a Trivy scan BEFORE
+      #    anything is pushed (SEC-31 — never publish a vulnerable image).
+      - name: Build (amd64, local) for scanning
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          load: true
+          tags: ${{ matrix.name }}:scan
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+      - name: Trivy scan (gate on fixable HIGH/CRITICAL)
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: ${{ matrix.name }}:scan
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+
+      # 2) Build the multi-arch image and push, with SBOM + provenance.
+      - name: Build and push (multi-arch)
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          sbom: true
+          provenance: mode=max
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+      # 3) Sign the pushed image (keyless — no key to manage).
+      - uses: sigstore/cosign-installer@v3
+      - name: Sign image with cosign
+        run: cosign sign --yes "${{ matrix.image }}@${{ steps.push.outputs.digest }}"
