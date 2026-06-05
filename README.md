@@ -103,6 +103,27 @@ Real output from the app — not mockups.
 
 ---
 
+## Requirements
+
+- **An Anthropic API key.** The AI Advisor, vendor research, and comparison
+  features call the Anthropic API with **your own key** — you're billed on your
+  own account, there is no shared key. Get one at
+  <https://console.anthropic.com>. (The TCO calculator is deterministic and
+  works without a key; the AI features won't.)
+- **To run the published images:**
+  [Docker](https://docs.docker.com/get-docker/) (Desktop or Engine) with
+  Compose v2.
+- **To run from source:** Python 3.12 + [uv](https://docs.astral.sh/uv/) and
+  Node 20+.
+
+> **LLM provider — Anthropic only (for now).** NetPlanner currently targets the
+> Anthropic API exclusively; the Research agent relies on Anthropic's
+> server-side web-search tool, which has no local equivalent. **Bring-your-own
+> key, not bring-your-own model** — support for local models (Ollama, LM Studio)
+> and other providers is a planned future addition, not available today.
+
+---
+
 ## Quick Start
 
 ### Run the published images (no build, no clone)
