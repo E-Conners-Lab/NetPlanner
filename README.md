@@ -182,8 +182,9 @@ This build follows the Secure Build Standard. Notably:
   conversation, and report is scoped to the authenticated user. Cross-user
   access returns 404 — never confirms whether the resource exists.
 - **Rate limiting (SEC-06).** SlowAPI in-process limiter on the LLM/PDF-heavy
-  endpoints (Advisor, Comparison, Reports), keyed by user id / IP. 429
-  responses carry `Retry-After`.
+  endpoints (Advisor, Comparison, Reports) and the auth endpoints (login
+  10/min, registration 5/min), keyed by user id / IP. 429 responses carry
+  `Retry-After`.
 - **Prompt injection (AI-1).** Project context is placed inside an explicit
   untrusted-data fence in the Advisor system prompt, after the PIS-17 anchor
   and PIS-24 guardrails. Boundary markers in hostile fields are escaped.
