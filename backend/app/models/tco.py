@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Float, ForeignKey, Integer, String
+from sqlalchemy import Float, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import JSON
 
@@ -30,6 +30,13 @@ class TCOScenario(Base, TimestampMixin):
     """
 
     __tablename__ = "tco_scenarios"
+    # PID amendment 1.5 + audit fix: enforce uniqueness on (lineage_id, version)
+    # so concurrent version saves cannot end up with duplicate vN rows.
+    __table_args__ = (
+        UniqueConstraint(
+            "lineage_id", "version", name="uq_tco_scenarios_lineage_version"
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=new_uuid)
     project_id: Mapped[str] = mapped_column(

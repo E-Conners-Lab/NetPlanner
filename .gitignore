@@ -36,6 +36,12 @@ npm-debug.log*
 .vscode/
 .DS_Store
 
+# --- Local agent tooling (not part of the public project) ---
+.claude/
+.codex/
+CLAUDE.md
+AGENTS.md
+
 # --- Build / misc ---
 dist/
 build/

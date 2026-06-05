@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { Link, useLocation } from 'react-router-dom';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { getProject } from '../../api/projects.js';
+import { useAuth } from '../../auth/AuthContext.jsx';
 
 /** Section label per project sub-route. */
 const SECTION_LABELS = {
@@ -64,6 +65,13 @@ function Crumb({ to, current = false, children }) {
  */
 export default function TopBar() {
   const location = useLocation();
+  const navigate = useNavigate();
+  const { user, logout } = useAuth();
+
+  const handleSignOut = async () => {
+    await logout();
+    navigate('/login', { replace: true });
+  };
 
   // Parse `projectId` and section from the path rather than `useParams()`:
   // the TopBar is rendered outside `<Routes>`, so `useParams()` returns
@@ -125,9 +133,20 @@ export default function TopBar() {
         )}
       </nav>
 
-      {/* Right: action slot for context-aware actions (e.g. "New Project"). */}
-      <div className="flex items-center gap-2" aria-label="Top bar actions">
-        <div className="w-1" aria-hidden="true" />
+      {/* Right: account actions */}
+      <div className="flex items-center gap-3" aria-label="Top bar actions">
+        {user ? (
+          <span className="text-sm text-textMuted truncate max-w-[200px]" title={user.email}>
+            {user.email}
+          </span>
+        ) : null}
+        <button
+          type="button"
+          onClick={handleSignOut}
+          className="text-sm text-textMuted hover:text-text transition-colors"
+        >
+          Sign out
+        </button>
       </div>
     </header>
   );

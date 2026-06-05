@@ -1,10 +1,8 @@
 name: CI
 
 # Runs the project quality gate on every push to main and every PR.
-# The backend and frontend gates are hard checks. The security scans start
-# informational (continue-on-error) so they surface findings without blocking
-# a freshly-introduced baseline — remove `continue-on-error` to make them gate
-# merges per SEC-29 (dependencies) and SEC-35 (SAST + secret scanning).
+# Backend, frontend, and security scans are all hard-blocking
+# (SEC-29 dependencies + SEC-35 SAST and secret scanning).
 #
 # The backend is managed by uv: `uv.lock` is the committed source of truth and
 # `uv sync --frozen` installs exactly what it pins (fails if it drifts).
@@ -61,11 +59,16 @@ jobs:
         run: uv run bandit -r app alembic -ll
 
       - name: Migrations apply and match the ORM
+        env:
+          JWT_SECRET: ci-jwt-secret-for-test-only
         run: |
           uv run alembic upgrade head
           uv run alembic check
 
       - name: Tests + coverage (80% floor)
+        env:
+          JWT_SECRET: ci-jwt-secret-for-test-only
+          SESSION_COOKIE_SECURE: "false"
         run: uv run pytest --cov=app --cov-report=term-missing --cov-fail-under=80
 
   frontend:
@@ -108,26 +111,22 @@ jobs:
           node-version: "20"
 
       - name: pip-audit (Python dependency vulnerabilities — SEC-29)
-        continue-on-error: true
         run: |
           uv export --project backend --no-emit-project --all-groups \
             --format requirements-txt -o /tmp/np-requirements.txt
-          uvx pip-audit -r /tmp/np-requirements.txt
+          uvx pip-audit --disable-pip -r /tmp/np-requirements.txt
 
       - name: npm audit (frontend dependency vulnerabilities — SEC-29)
-        continue-on-error: true
         working-directory: frontend
-        run: npm audit --audit-level=high
+        run: npm audit --audit-level=moderate
 
       - name: Semgrep (SAST — SEC-35)
-        continue-on-error: true
         run: uvx semgrep scan --config=auto --error
 
       - name: TruffleHog (secret scanning — SEC-35)
         # Native push protection is paid on private repos; this is the CI
         # equivalent. Filesystem scan of the checked-out tree — no git
         # base/head range, so it works on any push.
-        continue-on-error: true
         run: |
           curl -sSfL https://raw.githubusercontent.com/trufflesecurity/trufflehog/main/scripts/install.sh \
             | sh -s -- -b /usr/local/bin

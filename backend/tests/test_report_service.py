@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.tco import calculate_tco
 from app.models.project import Project
+from app.models.user import User
 from app.schemas.comparison import ComparisonCell, ComparisonResult
 from app.schemas.report import ReportArtifact
 from app.schemas.tco import TCOFormInputs
@@ -21,8 +22,8 @@ _TCO_INPUTS = TCOFormInputs(
 )
 
 
-async def _project(db: AsyncSession, name: str = "Report Test") -> Project:
-    project = Project(name=name)
+async def _project(db: AsyncSession, owner: User, name: str = "Report Test") -> Project:
+    project = Project(name=name, owner_id=owner.id)
     db.add(project)
     await db.commit()
     await db.refresh(project)
@@ -41,8 +42,10 @@ def _comparison_result() -> ComparisonResult:
     )
 
 
-async def test_resolve_artifacts_resolves_each_kind(db_session: AsyncSession) -> None:
-    project = await _project(db_session)
+async def test_resolve_artifacts_resolves_each_kind(
+    db_session: AsyncSession, auth_user: User
+) -> None:
+    project = await _project(db_session, auth_user)
     tco = await tco_service.save_scenario(
         db_session, project.id, calculate_tco("S", _TCO_INPUTS)
     )
@@ -75,9 +78,11 @@ async def test_resolve_artifacts_resolves_each_kind(db_session: AsyncSession) ->
     assert unresolved == []
 
 
-async def test_resolve_artifacts_flags_missing(db_session: AsyncSession) -> None:
+async def test_resolve_artifacts_flags_missing(
+    db_session: AsyncSession, auth_user: User
+) -> None:
     # PIS-20: an unresolved artifact is surfaced, not silently dropped.
-    project = await _project(db_session)
+    project = await _project(db_session, auth_user)
     tcos, _, _, _, unresolved = await report_service.resolve_artifacts(
         db_session, project.id, [ReportArtifact(kind="tco", ref_id="nope")]
     )
@@ -86,11 +91,11 @@ async def test_resolve_artifacts_flags_missing(db_session: AsyncSession) -> None
 
 
 async def test_resolve_artifacts_rejects_cross_project(
-    db_session: AsyncSession,
+    db_session: AsyncSession, auth_user: User
 ) -> None:
     # SEC-27: an artifact owned by another project is not resolved.
-    project_a = await _project(db_session, "Project A")
-    project_b = await _project(db_session, "Project B")
+    project_a = await _project(db_session, auth_user, "Project A")
+    project_b = await _project(db_session, auth_user, "Project B")
     tco = await tco_service.save_scenario(
         db_session, project_a.id, calculate_tco("S", _TCO_INPUTS)
     )
@@ -107,8 +112,10 @@ async def test_resolve_artifacts_rejects_cross_project(
 # ---------------------------------------------------------------------------
 
 
-async def test_resolve_tco_comparison_artifact(db_session: AsyncSession) -> None:
-    project = await _project(db_session)
+async def test_resolve_tco_comparison_artifact(
+    db_session: AsyncSession, auth_user: User
+) -> None:
+    project = await _project(db_session, auth_user)
     v1 = await tco_service.save_scenario(
         db_session, project.id, calculate_tco("Plan", _TCO_INPUTS)
     )
@@ -126,11 +133,11 @@ async def test_resolve_tco_comparison_artifact(db_session: AsyncSession) -> None
 
 
 async def test_resolve_tco_comparison_rejects_cross_project(
-    db_session: AsyncSession,
+    db_session: AsyncSession, auth_user: User
 ) -> None:
     """SEC-27: comparison must not silently include a scenario from another project."""
-    project_a = await _project(db_session, "A")
-    project_b = await _project(db_session, "B")
+    project_a = await _project(db_session, auth_user, "A")
+    project_b = await _project(db_session, auth_user, "B")
     v1 = await tco_service.save_scenario(
         db_session, project_a.id, calculate_tco("Plan", _TCO_INPUTS)
     )
@@ -157,8 +164,8 @@ def test_tco_comparison_artifact_requires_two_distinct_ids() -> None:
         ReportArtifact(kind="tco_comparison", ref_id="abc", ref_id_b="abc")
 
 
-async def test_save_and_list_reports(db_session: AsyncSession) -> None:
-    project = await _project(db_session)
+async def test_save_and_list_reports(db_session: AsyncSession, auth_user: User) -> None:
+    project = await _project(db_session, auth_user)
     await report_service.save_report(
         db_session, project.id, "Q1 Report", [ReportArtifact(kind="tco", ref_id="x")]
     )

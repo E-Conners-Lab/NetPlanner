@@ -20,7 +20,9 @@ services:
     volumes:
       # Bind-mount source for hot reload; backend/data carries the SQLite file.
       - ./backend:/app
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    # Apply migrations before launching so a fresh `docker compose up`
+    # always brings the DB up to head (init_db refuses to start otherwise).
+    command: sh -c "uv run alembic upgrade head && uv run uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     restart: unless-stopped
 
   frontend:

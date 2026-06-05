@@ -9,6 +9,9 @@ Versioning (PID amendment 1.5): a `POST` may include `parent_scenario_id` in
 the payload to save the result as the next version of an existing lineage.
 The convenience `GET /lineages/{lineage_id}` route returns every version in a
 lineage for the version history UI.
+
+Every route requires authentication and is scoped to the user's projects
+(SEC-02 / SEC-27).
 """
 
 from __future__ import annotations
@@ -17,17 +20,19 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.tco import calculate_tco
+from app.auth import get_current_user
 from app.database import get_db
 from app.models.tco import TCOScenario
+from app.models.user import User
 from app.schemas.tco import TCOResult, TCOScenarioCreate, TCOScenarioRead
 from app.services import project_service, tco_service
 
 router = APIRouter(prefix="/projects", tags=["tco"])
 
 
-async def _require_project(db: AsyncSession, project_id: str) -> None:
-    """Raise 404 if the project does not exist."""
-    if await project_service.get_project(db, project_id) is None:
+async def _require_project(db: AsyncSession, project_id: str, owner_id: str) -> None:
+    """Raise 404 if the project does not exist or is not owned by the user."""
+    if await project_service.get_project(db, project_id, owner_id) is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Project not found")
 
 
@@ -54,9 +59,10 @@ async def preview_tco(
     project_id: str,
     payload: TCOScenarioCreate,
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> TCOResult:
     """Compute a TCO model without saving it — for review before committing."""
-    await _require_project(db, project_id)
+    await _require_project(db, project_id, user.id)
     return calculate_tco(payload.scenario_name, payload.inputs)
 
 
@@ -69,13 +75,14 @@ async def create_tco_scenario(
     project_id: str,
     payload: TCOScenarioCreate,
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> TCOScenario:
     """Compute and persist a TCO scenario.
 
     If `parent_scenario_id` is supplied, the saved row joins that scenario's
     lineage as the next version. Otherwise a fresh lineage starts at v1.
     """
-    await _require_project(db, project_id)
+    await _require_project(db, project_id, user.id)
     parent = await _resolve_parent(db, project_id, payload.parent_scenario_id)
     result = calculate_tco(payload.scenario_name, payload.inputs)
     return await tco_service.save_scenario(db, project_id, result, parent=parent)
@@ -83,10 +90,12 @@ async def create_tco_scenario(
 
 @router.get("/{project_id}/tco", response_model=list[TCOScenarioRead])
 async def list_tco_scenarios(
-    project_id: str, db: AsyncSession = Depends(get_db)
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> list[TCOScenario]:
-    """List a project's saved TCO scenarios, newest first."""
-    await _require_project(db, project_id)
+    """List the user's saved TCO scenarios for one project, newest first."""
+    await _require_project(db, project_id, user.id)
     return await tco_service.list_scenarios(db, project_id)
 
 
@@ -98,11 +107,12 @@ async def list_tco_lineage_versions(
     project_id: str,
     lineage_id: str,
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> list[TCOScenario]:
     """Return every version in a lineage for one project (oldest first).
 
     Empty list is a valid response when the lineage_id is unknown — we do not
     expose whether it exists in another project (SEC-27).
     """
-    await _require_project(db, project_id)
+    await _require_project(db, project_id, user.id)
     return await tco_service.list_versions(db, project_id, lineage_id)

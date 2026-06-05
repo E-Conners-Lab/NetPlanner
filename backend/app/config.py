@@ -36,6 +36,28 @@ class Settings(BaseSettings):
     # Empty by default; the AI layer (Phase 2+) fails loud if it is missing.
     anthropic_api_key: str = ""
 
+    # --- Authentication (SEC-01 / SEC-14 / SEC-16) -------------------------
+    # JWT signing secret. Empty in dev means a generated per-process key —
+    # production fails loud at startup if the value is unset or the default.
+    jwt_secret: str = ""
+    # Cookie name + max-age (seconds). 8 hours is a sensible session length
+    # for an advisory tool; the cookie is also rotated on login (SEC-04).
+    session_cookie_name: str = "netplanner_session"
+    session_max_age_seconds: int = 8 * 60 * 60
+    # Double-submit CSRF cookie (SEC-07). Readable by the SPA (not httpOnly)
+    # so it can be echoed back in the X-CSRF-Token header; verified against
+    # the cookie with a constant-time comparison on every mutating request.
+    csrf_cookie_name: str = "netplanner_csrf"
+    csrf_header_name: str = "X-CSRF-Token"
+    # Set to False in non-HTTPS development to allow the cookie to be sent.
+    # Production keeps the default (Secure flag enabled).
+    session_cookie_secure: bool = True
+    # Force HSTS on every response. Production sends HSTS automatically
+    # (keyed off ``environment``); this flag additionally enables it for a
+    # non-production HTTPS deployment. Off by default so plain-HTTP dev does
+    # not pin the local origin to HTTPS.
+    enable_hsts: bool = False
+
     # --- CORS (SEC-08 family) ---------------------------------------------
     # Comma-separated list. Dev default is the Vite dev server origin.
     cors_origins: str = "http://localhost:5173"
@@ -71,6 +93,28 @@ class Settings(BaseSettings):
                 "Set it in your environment or .env file."
             )
         return self.anthropic_api_key
+
+    def require_jwt_secret(self) -> str:
+        """Return the JWT signing secret (SEC-12 / SEC-14).
+
+        Production requires the operator to supply a strong, persistent value
+        — otherwise every restart invalidates sessions and admin tokens.
+        Development falls back to a generated key so the app boots locally
+        with no `.env`, but never in production.
+        """
+        if self.jwt_secret:
+            return self.jwt_secret
+        if self.environment == "production":
+            raise ValueError(
+                "JWT_SECRET is required in production. "
+                "Set a strong random value in your environment or .env file."
+            )
+        # Dev / test default: a stable per-process random key. Tests that need
+        # a deterministic secret override `jwt_secret` directly.
+        import secrets
+
+        self.jwt_secret = secrets.token_urlsafe(32)
+        return self.jwt_secret
 
 
 @lru_cache

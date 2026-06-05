@@ -8,16 +8,26 @@ Versioning (PID amendment 1.5): `save_scenario` accepts an optional `parent`
 scenario. When supplied, the new row inherits the parent's `lineage_id` and
 takes `version = max(version in lineage) + 1`. When absent, the new row starts
 a fresh lineage (`lineage_id = own id`, `version = 1`).
+
+Concurrent saves to the same lineage are guarded at two layers:
+1. A unique `(lineage_id, version)` DB constraint (migration ab4c8a31bc1a).
+2. A short retry loop in this module so a race-loser refreshes the
+   `max(version)` query and tries again instead of bubbling a 500 to the UI.
 """
 
 from __future__ import annotations
 
+import asyncio
+
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import new_uuid
 from app.models.tco import TCOScenario
 from app.schemas.tco import TCOResult
+
+_MAX_VERSION_RETRIES = 5
 
 
 async def save_scenario(
@@ -31,26 +41,69 @@ async def save_scenario(
     When `parent` is provided, the new row joins the parent's lineage as the
     next version. The caller is responsible for verifying the parent belongs
     to the same project (SEC-27) — the route layer does that check.
+
+    If two requests race to save the same next version, the DB's unique
+    constraint rejects the loser; we re-read the current max version and
+    retry with a bumped number (capped at `_MAX_VERSION_RETRIES`).
     """
     if parent is None:
         # Fresh lineage — generate the id up-front so we can use it as the
-        # lineage_id, keeping the v1 row self-referential.
+        # lineage_id, keeping the v1 row self-referential. A fresh-lineage
+        # save cannot race against a concurrent save because the id is
+        # globally unique.
         scenario_id = new_uuid()
-        lineage_id = scenario_id
-        version = 1
-    else:
-        scenario_id = new_uuid()
-        lineage_id = parent.lineage_id
-        # Highest existing version in this lineage + 1. Concurrent saves to
-        # the same lineage are vanishingly rare in this single-user app; if
-        # that ever changes, switch to a unique (lineage_id, version) index.
-        next_version_row = await db.execute(
-            select(func.max(TCOScenario.version)).where(
-                TCOScenario.lineage_id == lineage_id
-            )
+        return await _persist(
+            db,
+            project_id,
+            result,
+            scenario_id=scenario_id,
+            lineage_id=scenario_id,
+            version=1,
         )
-        version = (next_version_row.scalar() or 0) + 1
 
+    lineage_id = parent.lineage_id
+    for attempt in range(_MAX_VERSION_RETRIES):
+        next_version = await _next_version(db, lineage_id)
+        try:
+            return await _persist(
+                db,
+                project_id,
+                result,
+                scenario_id=new_uuid(),
+                lineage_id=lineage_id,
+                version=next_version,
+            )
+        except IntegrityError:
+            await db.rollback()
+            if attempt == _MAX_VERSION_RETRIES - 1:
+                raise
+            # Brief backoff so the racing transaction commits its winning row
+            # before we re-read max(version).
+            await asyncio.sleep(0.02 * (attempt + 1))
+
+    # Unreachable — the loop above either returns or raises.
+    raise RuntimeError("TCO scenario save retry budget exhausted")
+
+
+async def _next_version(db: AsyncSession, lineage_id: str) -> int:
+    """Return max(version)+1 for the lineage (1-indexed if the lineage is empty)."""
+    row = await db.execute(
+        select(func.max(TCOScenario.version)).where(
+            TCOScenario.lineage_id == lineage_id
+        )
+    )
+    return (row.scalar() or 0) + 1
+
+
+async def _persist(
+    db: AsyncSession,
+    project_id: str,
+    result: TCOResult,
+    *,
+    scenario_id: str,
+    lineage_id: str,
+    version: int,
+) -> TCOScenario:
     scenario = TCOScenario(
         id=scenario_id,
         project_id=project_id,

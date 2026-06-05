@@ -59,7 +59,9 @@ class AdvisorRequest(BaseModel):
     """Inbound payload for a single streaming Advisor turn.
 
     `conversation_id` is null to start a new conversation, set to continue one.
+    `message` is hard-capped so a single turn cannot overflow the per-call
+    token budget (PIS-14) or be used as a request-size DoS lever.
     """
 
-    message: str = Field(..., min_length=1)
-    conversation_id: str | None = None
+    message: str = Field(..., min_length=1, max_length=4000)
+    conversation_id: str | None = Field(default=None, max_length=36)

@@ -45,10 +45,12 @@ class ReportRequest(BaseModel):
     """Inbound payload for `POST /projects/{id}/reports`.
 
     At least one artifact is required (PIS-05): a report must contain content.
+    `artifacts` is capped so the renderer cannot be forced to assemble an
+    unbounded document.
     """
 
     title: str = Field(..., min_length=1, max_length=200)
-    artifacts: list[ReportArtifact] = Field(..., min_length=1)
+    artifacts: list[ReportArtifact] = Field(..., min_length=1, max_length=20)
 
 
 class ReportRead(BaseModel):

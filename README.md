@@ -153,10 +153,49 @@ build journal, including the Phase 7 entry.
 
 ## Security
 
-This build follows the Secure Build Standard. Notably: secrets are read from
-the environment only (never committed), all inputs are validated server-side
-with Pydantic, error responses never leak internals, and the backend container
-runs as a non-root user from a slim base image.
+This build follows the Secure Build Standard. Notably:
+
+- **Auth (SEC-01 / SEC-17).** Argon2id-hashed passwords; session JWT
+  delivered as an httpOnly, Secure, `SameSite=Strict` cookie (Backend-for-
+  Frontend pattern). Logout server-side rotates a `session_version` counter,
+  invalidating any prior tokens.
+- **Ownership (SEC-03 / SEC-27).** Every project, TCO scenario, comparison,
+  conversation, and report is scoped to the authenticated user. Cross-user
+  access returns 404 — never confirms whether the resource exists.
+- **Rate limiting (SEC-06).** SlowAPI in-process limiter on the LLM/PDF-heavy
+  endpoints (Advisor, Comparison, Reports), keyed by user id / IP. 429
+  responses carry `Retry-After`.
+- **Prompt injection (AI-1).** Project context is placed inside an explicit
+  untrusted-data fence in the Advisor system prompt, after the PIS-17 anchor
+  and PIS-24 guardrails. Boundary markers in hostile fields are escaped.
+- **PDF sanitization (AI-1).** Advisor markdown is bleach-sanitized before
+  rendering; WeasyPrint's url_fetcher rejects all external/local fetches.
+- **Immutable reports.** Each report stores its rendered PDF bytes; a
+  re-download returns the original artifact verbatim.
+- **Production startup.** The DB must be at the Alembic head — `create_all`
+  fallback is disabled in production. `JWT_SECRET` must be set.
+- **Secrets.** Read from environment only; never committed; never logged.
+
+- **CSRF (SEC-07).** State-changing requests carry a double-submit CSRF
+  token: a non-httpOnly `netplanner_csrf` cookie is echoed back in an
+  `X-CSRF-Token` header and verified with a constant-time comparison, on top
+  of the `SameSite=Strict` session cookie.
+- **Brute-force defense (SEC-06 / SEC-28).** Accounts lock for 15 minutes
+  after 5 consecutive failed logins; login success, failure, and logout are
+  written to a dedicated audit log (no passwords or PII).
+- **Transport headers (SEC-08 / SEC-24).** HSTS is sent automatically in
+  production; API responses set `Cache-Control: no-store` and a deny-all CSP.
+
+Single-tenant SQLite is the launch default. For multi-user deployments
+beyond ~50 active operators, point `DATABASE_URL` at Postgres (the migration
+tree is dialect-agnostic).
+
+---
+
+## License
+
+NetPlanner is released under the [MIT License](LICENSE).
+Copyright © 2026 Elliot Conner / The Tech-E LLC.
 
 ---
 

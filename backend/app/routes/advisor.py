@@ -12,15 +12,25 @@ import json
 import logging
 from collections.abc import AsyncGenerator
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.agents.advisor import project_context_is_sufficient, stream_advisor_turn
+from app.agents.advisor import (
+    project_context_is_sufficient,
+    stream_advisor_turn,
+)
 from app.agents.project_context import build_project_context
+from app.auth import get_current_user
 from app.database import get_db
 from app.models.conversation import Conversation
-from app.schemas.conversation import AdvisorRequest, ConversationSummary, MessageRead
+from app.models.user import User
+from app.rate_limit import limiter, rate_limit
+from app.schemas.conversation import (
+    AdvisorRequest,
+    ConversationSummary,
+    MessageRead,
+)
 from app.services import conversation_service, project_service
 
 logger = logging.getLogger(__name__)
@@ -43,13 +53,16 @@ def _sse(payload: dict) -> str:
 
 
 @router.post("/{project_id}/advisor")
+@limiter.limit(rate_limit("advisor"))
 async def advisor_turn(
+    request: Request,
     project_id: str,
     payload: AdvisorRequest,
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> StreamingResponse:
     """Stream one Advisor conversation turn as SSE (PIS-13)."""
-    project = await project_service.get_project(db, project_id)
+    project = await project_service.get_project(db, project_id, user.id)
     if project is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Project not found")
 
@@ -86,16 +99,22 @@ async def advisor_turn(
         )
 
     await conversation_service.add_message(db, conversation.id, "user", payload.message)
-    history = [
-        {"role": m.role, "content": m.content}
-        for m in await conversation_service.list_messages(db, conversation.id)
-    ]
+
+    # PIS-16: at the threshold, compress the oldest messages into a summary so
+    # the prompt context stays within budget on long conversations.
+    await conversation_service.maybe_summarize_history(db, conversation.id)
+
+    messages = await conversation_service.list_messages(db, conversation.id)
+    history = [{"role": m.role, "content": m.content} for m in messages]
+    summary = (
+        await conversation_service.get_conversation(db, conversation.id)
+    ).summary  # type: ignore[union-attr]
     conversation_id = conversation.id
 
     async def _advisor_stream() -> AsyncGenerator[str, None]:
         collected: list[str] = []
         try:
-            async for chunk in stream_advisor_turn(history, context):
+            async for chunk in stream_advisor_turn(history, context, summary=summary):
                 collected.append(chunk)
                 yield _sse({"type": "token", "content": chunk})
             await conversation_service.add_message(
@@ -121,10 +140,12 @@ async def advisor_turn(
 
 @router.get("/{project_id}/conversations", response_model=list[ConversationSummary])
 async def list_conversations(
-    project_id: str, db: AsyncSession = Depends(get_db)
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> list[Conversation]:
     """List a project's Advisor conversations, newest first."""
-    project = await project_service.get_project(db, project_id)
+    project = await project_service.get_project(db, project_id, user.id)
     if project is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Project not found")
     return await conversation_service.list_conversations(db, project_id)
@@ -138,6 +159,7 @@ async def list_conversation_messages(
     project_id: str,
     conversation_id: str,
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> list:
     """Return the messages of one conversation in chronological order.
 
@@ -145,7 +167,7 @@ async def list_conversation_messages(
     user can continue it. Cross-project access is rejected with 404 to
     avoid leaking existence (SEC-27).
     """
-    project = await project_service.get_project(db, project_id)
+    project = await project_service.get_project(db, project_id, user.id)
     if project is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Project not found")
 

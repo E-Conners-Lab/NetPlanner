@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.tco import calculate_tco
 from app.models.project import Project
+from app.models.user import User
 from app.schemas.tco import TCOFormInputs
 from app.services import tco_service
 
@@ -16,16 +17,16 @@ _INPUTS = TCOFormInputs(
 )
 
 
-async def _make_project(db: AsyncSession) -> Project:
-    project = Project(name="TCO Test Project")
+async def _make_project(db: AsyncSession, owner: User) -> Project:
+    project = Project(name="TCO Test Project", owner_id=owner.id)
     db.add(project)
     await db.commit()
     await db.refresh(project)
     return project
 
 
-async def test_save_and_get_scenario(db_session: AsyncSession) -> None:
-    project = await _make_project(db_session)
+async def test_save_and_get_scenario(db_session: AsyncSession, auth_user: User) -> None:
+    project = await _make_project(db_session, auth_user)
 
     saved = await tco_service.save_scenario(
         db_session, project.id, calculate_tco("AP Refresh", _INPUTS)
@@ -40,12 +41,14 @@ async def test_save_and_get_scenario(db_session: AsyncSession) -> None:
     assert fetched.id == saved.id
 
 
-async def test_get_scenario_missing_returns_none(db_session: AsyncSession) -> None:
+async def test_get_scenario_missing_returns_none(
+    db_session: AsyncSession, auth_user: User
+) -> None:
     assert await tco_service.get_scenario(db_session, "does-not-exist") is None
 
 
-async def test_list_scenarios(db_session: AsyncSession) -> None:
-    project = await _make_project(db_session)
+async def test_list_scenarios(db_session: AsyncSession, auth_user: User) -> None:
+    project = await _make_project(db_session, auth_user)
     await tco_service.save_scenario(
         db_session, project.id, calculate_tco("Scenario A", _INPUTS)
     )
@@ -58,9 +61,9 @@ async def test_list_scenarios(db_session: AsyncSession) -> None:
 
 
 async def test_saved_scenario_persists_full_breakdown(
-    db_session: AsyncSession,
+    db_session: AsyncSession, auth_user: User
 ) -> None:
-    project = await _make_project(db_session)
+    project = await _make_project(db_session, auth_user)
 
     saved = await tco_service.save_scenario(
         db_session, project.id, calculate_tco("Breakdown", _INPUTS)
@@ -77,8 +80,10 @@ async def test_saved_scenario_persists_full_breakdown(
 # ---------------------------------------------------------------------------
 
 
-async def test_fresh_save_starts_new_lineage_at_v1(db_session: AsyncSession) -> None:
-    project = await _make_project(db_session)
+async def test_fresh_save_starts_new_lineage_at_v1(
+    db_session: AsyncSession, auth_user: User
+) -> None:
+    project = await _make_project(db_session, auth_user)
 
     saved = await tco_service.save_scenario(
         db_session, project.id, calculate_tco("V1", _INPUTS)
@@ -90,9 +95,9 @@ async def test_fresh_save_starts_new_lineage_at_v1(db_session: AsyncSession) -> 
 
 
 async def test_save_with_parent_inherits_lineage_and_bumps_version(
-    db_session: AsyncSession,
+    db_session: AsyncSession, auth_user: User
 ) -> None:
-    project = await _make_project(db_session)
+    project = await _make_project(db_session, auth_user)
 
     v1 = await tco_service.save_scenario(
         db_session, project.id, calculate_tco("Refresh plan", _INPUTS)
@@ -119,11 +124,11 @@ async def test_save_with_parent_inherits_lineage_and_bumps_version(
 
 
 async def test_branching_from_v1_still_bumps_past_existing_max(
-    db_session: AsyncSession,
+    db_session: AsyncSession, auth_user: User
 ) -> None:
     """A second branch from v1 produces v3 (max+1), not v2 — versions are
     monotonic within a lineage even when the user branches off an older version."""
-    project = await _make_project(db_session)
+    project = await _make_project(db_session, auth_user)
 
     v1 = await tco_service.save_scenario(
         db_session, project.id, calculate_tco("Lineage", _INPUTS)
@@ -141,9 +146,9 @@ async def test_branching_from_v1_still_bumps_past_existing_max(
 
 
 async def test_list_versions_returns_lineage_oldest_first(
-    db_session: AsyncSession,
+    db_session: AsyncSession, auth_user: User
 ) -> None:
-    project = await _make_project(db_session)
+    project = await _make_project(db_session, auth_user)
     v1 = await tco_service.save_scenario(
         db_session, project.id, calculate_tco("Plan", _INPUTS)
     )
@@ -161,10 +166,12 @@ async def test_list_versions_returns_lineage_oldest_first(
     assert other.id not in {row.id for row in history}
 
 
-async def test_list_versions_is_scoped_to_project(db_session: AsyncSession) -> None:
+async def test_list_versions_is_scoped_to_project(
+    db_session: AsyncSession, auth_user: User
+) -> None:
     """Asking for a lineage that exists in a different project returns []."""
-    project_a = await _make_project(db_session)
-    project_b = await _make_project(db_session)
+    project_a = await _make_project(db_session, auth_user)
+    project_b = await _make_project(db_session, auth_user)
 
     v1_a = await tco_service.save_scenario(
         db_session, project_a.id, calculate_tco("A", _INPUTS)

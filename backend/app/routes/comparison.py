@@ -9,14 +9,17 @@ from __future__ import annotations
 
 import asyncio
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.comparison import run_comparison_agent
 from app.agents.project_context import build_project_context
 from app.agents.research import research
+from app.auth import get_current_user
 from app.database import get_db
 from app.models.comparison import VendorComparison
+from app.models.user import User
+from app.rate_limit import limiter, rate_limit
 from app.schemas.comparison import ComparisonRequest, VendorComparisonRead
 from app.services import comparison_service, project_service
 
@@ -38,13 +41,16 @@ def _research_query(vendor: str) -> str:
     response_model=VendorComparisonRead,
     status_code=status.HTTP_201_CREATED,
 )
+@limiter.limit(rate_limit("comparison"))
 async def create_comparison(
+    request: Request,
     project_id: str,
     payload: ComparisonRequest,
     db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> VendorComparison:
     """Generate and save a vendor comparison matrix."""
-    project = await project_service.get_project(db, project_id)
+    project = await project_service.get_project(db, project_id, user.id)
     if project is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Project not found")
 
@@ -63,10 +69,12 @@ async def create_comparison(
 
 @router.get("/{project_id}/comparison", response_model=list[VendorComparisonRead])
 async def list_comparisons(
-    project_id: str, db: AsyncSession = Depends(get_db)
+    project_id: str,
+    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ) -> list[VendorComparison]:
     """List a project's saved vendor comparisons, newest first."""
-    project = await project_service.get_project(db, project_id)
+    project = await project_service.get_project(db, project_id, user.id)
     if project is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail="Project not found")
     return await comparison_service.list_comparisons(db, project_id)

@@ -5,12 +5,13 @@ from __future__ import annotations
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.project import Project
+from app.models.user import User
 from app.schemas.comparison import ComparisonCell, ComparisonResult
 from app.services import comparison_service
 
 
-async def _make_project(db: AsyncSession) -> Project:
-    project = Project(name="Comparison Test Project")
+async def _make_project(db: AsyncSession, owner: User) -> Project:
+    project = Project(name="Comparison Test Project", owner_id=owner.id)
     db.add(project)
     await db.commit()
     await db.refresh(project)
@@ -39,8 +40,10 @@ def _sample_result() -> ComparisonResult:
     )
 
 
-async def test_save_and_get_comparison(db_session: AsyncSession) -> None:
-    project = await _make_project(db_session)
+async def test_save_and_get_comparison(
+    db_session: AsyncSession, auth_user: User
+) -> None:
+    project = await _make_project(db_session, auth_user)
 
     saved = await comparison_service.save_comparison(
         db_session, project.id, _sample_result()
@@ -59,8 +62,8 @@ async def test_get_comparison_missing_returns_none(db_session: AsyncSession) -> 
     assert await comparison_service.get_comparison(db_session, "missing") is None
 
 
-async def test_list_comparisons(db_session: AsyncSession) -> None:
-    project = await _make_project(db_session)
+async def test_list_comparisons(db_session: AsyncSession, auth_user: User) -> None:
+    project = await _make_project(db_session, auth_user)
     await comparison_service.save_comparison(db_session, project.id, _sample_result())
     await comparison_service.save_comparison(db_session, project.id, _sample_result())
 
