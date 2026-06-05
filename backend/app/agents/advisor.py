@@ -30,27 +30,53 @@ _MAX_HISTORY = 20
 _MAX_TOOL_ROUNDS = 4
 _MAX_TOKENS = 4096
 
-# Shown when the model returns `stop_reason: "refusal"` — the provider's safety
-# classifier blocked the output (commonly the `cyber` classifier reacting to
-# security-adjacent terms pulled in via web_search). Phrased so the user knows
-# it is not an input error and that a retry usually clears it.
-_REFUSAL_MESSAGE = (
-    "\n\n[The model declined to complete this response — this is the provider's "
+
+class AdvisorRefusalError(Exception):
+    """Raised when the model safety classifier blocks the Advisor's output.
+
+    The route catches this to replace any partially-streamed provider text
+    with a clean notice — the provider's content-filter wording is not useful
+    to the user and reads like an app error.
+    """
+
+
+# Clean notice the route shows in place of the blocked output. The provider's
+# safety classifier (commonly `cyber`, reacting to security-adjacent terms
+# pulled in via web_search) blocked the response — phrased so the user knows it
+# is not an input error and that a retry usually clears it.
+REFUSAL_NOTICE = (
+    "The model declined to complete this response — this is the provider's "
     "safety classifier, usually reacting to security-adjacent terms in the "
     "research rather than a problem with your question. Rephrasing or "
-    "re-running often resolves it.]"
+    "re-running often resolves it."
 )
 
 
+def _refusal_text(message: object) -> str:
+    """Best-effort extract of the raw blocked text, for diagnostic logging."""
+    parts = [
+        getattr(block, "text", "")
+        for block in getattr(message, "content", None) or []
+        if getattr(block, "type", None) == "text"
+    ]
+    return "".join(parts).strip()
+
+
 def _log_refusal(agent: str, message: object) -> None:
-    """Record a model safety refusal with its structured stop details."""
+    """Record a model safety refusal with its structured stop details.
+
+    Logs the raw blocked text (truncated) server-side only (SEC-11) so an
+    operator can see exactly what the provider returned without it ever
+    reaching the client.
+    """
     details = getattr(message, "stop_details", None)
     logger.warning(
         "%s turn refused by the model safety classifier (stop_reason=refusal): "
-        "category=%s explanation=%s",
+        "category=%s explanation=%s raw=%r",
         agent,
         getattr(details, "category", None),
         getattr(details, "explanation", None),
+        _refusal_text(message)[:300],
     )
 
 
@@ -268,8 +294,7 @@ async def stream_advisor_turn(
 
             if final.stop_reason == "refusal":
                 _log_refusal("Advisor", final)
-                yield _REFUSAL_MESSAGE
-                return
+                raise AdvisorRefusalError
             if final.stop_reason != "tool_use":
                 return
 
@@ -283,6 +308,10 @@ async def stream_advisor_turn(
 
         # Tool-round budget exhausted — close the turn cleanly.
         yield "\n\n(Research budget reached for this turn.)"
+    except AdvisorRefusalError:
+        # Let the route turn this into a clean "replace" event — never surface
+        # the provider's raw block text to the user.
+        raise
     except Exception:
         logger.exception("Advisor Agent turn failed")
         # PIS-20: surface a generic error rather than crashing the stream.

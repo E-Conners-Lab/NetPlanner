@@ -141,6 +141,17 @@ export default function useStream(projectId) {
                 updated[updated.length - 1] = last;
                 return updated;
               });
+            } else if (event.type === 'replace') {
+              // Overwrite the assistant turn — used when the safety classifier
+              // blocks output so any partially streamed provider text is
+              // discarded in favour of a clean notice.
+              setMessages((prev) => {
+                const updated = [...prev];
+                const last = { ...updated[updated.length - 1] };
+                last.content = event.content;
+                updated[updated.length - 1] = last;
+                return updated;
+              });
             } else if (event.type === 'done') {
               conversationIdRef.current = event.conversation_id ?? null;
             } else if (event.type === 'error') {

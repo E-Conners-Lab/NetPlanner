@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 
 import pytest
+from httpx import AsyncClient
 
 from app.agents import advisor, comparison
 from app.schemas.project import ProjectContext
@@ -23,12 +24,19 @@ class _StopDetails:
     explanation = "blocked by content classifier"
 
 
+class _TextBlock:
+    """A stand-in content block carrying the provider's raw blocked text."""
+
+    type = "text"
+    text = "Output blocked by content filter"
+
+
 class _RefusalResponse:
     """Stand-in for an Anthropic Message that was refused."""
 
     stop_reason = "refusal"
     stop_details = _StopDetails()
-    content: list = []
+    content: list = [_TextBlock()]
 
 
 # --- Comparison agent (single non-streaming call) -----------------------------
@@ -110,21 +118,56 @@ class _FakeStreamClient:
     messages = _FakeStreamMessages()
 
 
-async def test_advisor_agent_handles_refusal(
+async def test_advisor_agent_raises_refusal_and_logs_raw(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
+    """A refusal raises AdvisorRefusalError (the route turns it into a clean notice)
+    and logs the structured details + raw blocked text server-side."""
     monkeypatch.setattr(advisor, "get_anthropic_client", lambda: _FakeStreamClient())
 
-    chunks: list[str] = []
     with caplog.at_level(logging.WARNING):
-        async for chunk in advisor.stream_advisor_turn(
-            history=[{"role": "user", "content": "Compare firewall vendors"}],
-            project_context=_project(),
-        ):
-            chunks.append(chunk)
+        with pytest.raises(advisor.AdvisorRefusalError):
+            async for _chunk in advisor.stream_advisor_turn(
+                history=[{"role": "user", "content": "Compare firewall vendors"}],
+                project_context=_project(),
+            ):
+                pass
 
-    output = "".join(chunks)
-    # The user sees the intentional refusal message, not a silent empty turn.
-    assert advisor._REFUSAL_MESSAGE in output
+    # The structured stop details and the raw blocked text are captured for the
+    # operator — but only in the server log, never returned to the caller.
     assert "stop_reason=refusal" in caplog.text
     assert "cyber" in caplog.text
+    assert "Output blocked by content filter" in caplog.text
+
+
+async def test_advisor_route_replaces_blocked_output(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """On a refusal the SSE stream emits a `replace` event with the clean
+    notice, so the raw provider block text never becomes the final answer."""
+
+    async def _refusing_turn(history, context, summary=None):  # type: ignore[no-untyped-def]
+        yield "Output blocked by content filter"  # raw provider text (streamed)
+        raise advisor.AdvisorRefusalError
+
+    monkeypatch.setattr("app.routes.advisor.stream_advisor_turn", _refusing_turn)
+
+    project = (
+        await client.post(
+            "/api/projects",
+            json={"name": "Refusal", "description": "220 APs across 3 buildings."},
+        )
+    ).json()
+
+    resp = await client.post(
+        f"/api/projects/{project['id']}/advisor",
+        json={"message": "Compare firewall vendors"},
+    )
+
+    assert resp.status_code == 200
+    body = resp.text
+    # The clean notice is delivered as a replace event that overwrites the bubble.
+    # (SSE JSON-escapes non-ASCII, so match a distinctive ASCII fragment.)
+    assert '"type": "replace"' in body
+    assert "safety classifier" in body
+    assert "Rephrasing or re-running" in body
