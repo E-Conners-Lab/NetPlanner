@@ -146,7 +146,8 @@ docker compose -f compose.ghcr.yml up -d
 ```
 
 Then open <http://localhost:8080> and **register an account** on first run.
-Pin a specific release with `NETPLANNER_TAG=v1.0.0 docker compose -f compose.ghcr.yml up -d`.
+Pin a specific release with `NETPLANNER_TAG=1.0.0 docker compose -f compose.ghcr.yml up -d`
+(image tags drop the `v` prefix — the `v1.0.0` git tag publishes images tagged `1.0.0`).
 
 Images: `ghcr.io/e-conners-lab/netplanner-backend` and `…/netplanner-frontend`
 (linux/amd64 + linux/arm64, Trivy-scanned and cosign-signed).

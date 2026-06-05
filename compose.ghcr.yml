@@ -6,8 +6,8 @@
 #   3. docker compose -f compose.ghcr.yml up -d
 #   4. open http://localhost:8080  (register an account on first run)
 #
-# Pin a release instead of latest:
-#   NETPLANNER_TAG=v1.0.0 docker compose -f compose.ghcr.yml up -d
+# Pin a release instead of latest (image tags drop the `v` — git tag v1.0.0 -> image 1.0.0):
+#   NETPLANNER_TAG=1.0.0 docker compose -f compose.ghcr.yml up -d
 name: netplanner
 
 services:
