@@ -105,7 +105,32 @@ Real output from the app — not mockups.
 
 ## Quick Start
 
-### With Docker (recommended)
+### Run the published images (no build, no clone)
+
+Pre-built, multi-arch images are published to the GitHub Container Registry, so
+you can run NetPlanner without cloning the repo or building anything. In an
+empty folder, grab two files and go:
+
+```bash
+# 1. download the compose file + env template
+curl -O https://raw.githubusercontent.com/E-Conners-Lab/NetPlanner/main/compose.ghcr.yml
+curl -o .env.example https://raw.githubusercontent.com/E-Conners-Lab/NetPlanner/main/.env.example
+
+# 2. create your .env and set ANTHROPIC_API_KEY + JWT_SECRET
+cp .env.example .env
+#    JWT_SECRET: python -c "import secrets; print(secrets.token_urlsafe(48))"
+
+# 3. start it
+docker compose -f compose.ghcr.yml up -d
+```
+
+Then open <http://localhost:8080> and **register an account** on first run.
+Pin a specific release with `NETPLANNER_TAG=v1.0.0 docker compose -f compose.ghcr.yml up -d`.
+
+Images: `ghcr.io/e-conners-lab/netplanner-backend` and `…/netplanner-frontend`
+(linux/amd64 + linux/arm64, Trivy-scanned and cosign-signed).
+
+### With Docker (build from source)
 
 ```bash
 cp .env.example .env          # then add your ANTHROPIC_API_KEY
