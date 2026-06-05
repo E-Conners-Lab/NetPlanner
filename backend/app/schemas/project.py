@@ -6,16 +6,26 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+# Caps protect the DB and the model context budget (PIS-14) against
+# unbounded free-form input. Sized for realistic project notes, not unbounded
+# blobs.
+_DESCRIPTION_MAX = 4000
+_EXISTING_INFRA_MAX = 4000
+# Sanity ceiling on currency inputs — no organisation needs a per-project
+# budget anywhere near a trillion dollars; reject values that almost
+# certainly came from a fuzzing / overflow attempt.
+_BUDGET_MAX = 1_000_000_000_000.0
+
 
 class ProjectBase(BaseModel):
     """Fields shared by project create / read schemas."""
 
     name: str = Field(..., min_length=1, max_length=200)
     company: str = Field(default="", max_length=200)
-    description: str = ""
-    existing_infra: str = ""
+    description: str = Field(default="", max_length=_DESCRIPTION_MAX)
+    existing_infra: str = Field(default="", max_length=_EXISTING_INFRA_MAX)
     # Optional ceiling; must be non-negative when supplied (PIS-18).
-    budget_ceiling: float | None = Field(default=None, ge=0)
+    budget_ceiling: float | None = Field(default=None, ge=0, le=_BUDGET_MAX)
 
 
 class ProjectCreate(ProjectBase):
@@ -27,9 +37,9 @@ class ProjectUpdate(BaseModel):
 
     name: str | None = Field(default=None, min_length=1, max_length=200)
     company: str | None = Field(default=None, max_length=200)
-    description: str | None = None
-    existing_infra: str | None = None
-    budget_ceiling: float | None = Field(default=None, ge=0)
+    description: str | None = Field(default=None, max_length=_DESCRIPTION_MAX)
+    existing_infra: str | None = Field(default=None, max_length=_EXISTING_INFRA_MAX)
+    budget_ceiling: float | None = Field(default=None, ge=0, le=_BUDGET_MAX)
 
 
 class ProjectRead(ProjectBase):

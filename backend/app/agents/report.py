@@ -16,12 +16,72 @@ from __future__ import annotations
 import datetime as dt
 from html import escape
 
+import bleach
 import markdown as md
 
 from app.models.comparison import VendorComparison
 from app.models.conversation import Message
 from app.models.project import Project
 from app.models.tco import TCOScenario
+
+# SEC-05 / AI-1 — the Advisor authors markdown that ends up rendered into the
+# PDF. Treat it as untrusted (a prompt-injection could attempt to embed raw
+# HTML, javascript: URLs, or remote/file resource references that WeasyPrint
+# would otherwise fetch). Allow only a tight whitelist of formatting tags and
+# attributes; drop everything else.
+_ADVISOR_ALLOWED_TAGS: frozenset[str] = frozenset(
+    {
+        "p",
+        "br",
+        "strong",
+        "em",
+        "code",
+        "pre",
+        "blockquote",
+        "ul",
+        "ol",
+        "li",
+        "h1",
+        "h2",
+        "h3",
+        "h4",
+        "h5",
+        "h6",
+        "table",
+        "thead",
+        "tbody",
+        "tr",
+        "th",
+        "td",
+        "hr",
+        "span",
+    }
+)
+_ADVISOR_ALLOWED_ATTRS: dict[str, list[str]] = {"*": []}
+# Empty protocol list strips every URL-bearing attribute href/src/etc. The
+# whitelist above already excludes <a> and <img>, so this is belt-and-braces.
+_ADVISOR_ALLOWED_PROTOCOLS: list[str] = []
+
+
+def _render_advisor_markdown(text: str) -> str:
+    """Render Advisor markdown to HTML with raw-HTML stripped (AI-1).
+
+    The Advisor's free-form text is treated as untrusted. We render markdown
+    with the ``markdown.extensions.extra`` features we want (tables, sane
+    lists) but pass the result through ``bleach.clean`` so any embedded raw
+    HTML — including ``<script>``, ``<img src=file:///…>``, ``onerror=…``,
+    or ``href=javascript:…`` — is stripped before it can reach WeasyPrint.
+    """
+    rendered = md.markdown(text, extensions=["tables", "sane_lists"])
+    return bleach.clean(
+        rendered,
+        tags=_ADVISOR_ALLOWED_TAGS,
+        attributes=_ADVISOR_ALLOWED_ATTRS,
+        protocols=_ADVISOR_ALLOWED_PROTOCOLS,
+        strip=True,
+        strip_comments=True,
+    )
+
 
 # Mandatory footer on every export — not optional (PIS-24 #4).
 REPORT_DISCLAIMER = (
@@ -236,8 +296,10 @@ def _render_advisor(title: str, messages: list[Message]) -> str:
     for message in messages:
         role = "Advisor" if message.role == "assistant" else "You"
         if message.role == "assistant":
-            # The Advisor replies in markdown — render it to HTML.
-            content = md.markdown(message.content, extensions=["tables", "sane_lists"])
+            # The Advisor replies in markdown — render it through the
+            # sanitizing pipeline so raw HTML / file:// / javascript: are
+            # stripped before the PDF renderer sees them (AI-1).
+            content = _render_advisor_markdown(message.content)
         else:
             content = f"<p>{escape(message.content)}</p>"
         blocks.append(
@@ -321,6 +383,7 @@ def render_report(
     advisor_sections: list[tuple[str, list[Message]]],
     unresolved: list[str],
     tco_comparisons: list[tuple[TCOScenario, TCOScenario]] | None = None,
+    title: str | None = None,
 ) -> str:
     """Assemble a project's artifacts into a complete report HTML document.
 
@@ -336,6 +399,8 @@ def render_report(
             side-by-side comparison (PID amendment 1.5). Optional and
             defaulted so older callers that resolved without this fifth tuple
             element continue to work.
+        title: Report title shown in the PDF header. When omitted, falls back
+            to the legacy default so older callers keep working.
 
     Returns:
         str: A complete HTML document ready for the WeasyPrint PDF service.
@@ -344,7 +409,9 @@ def render_report(
     sections += [_render_tco(s) for s in tco_scenarios]
     sections += [_render_tco_comparison(a, b) for a, b in (tco_comparisons or [])]
     sections += [_render_comparison(c) for c in comparisons]
-    sections += [_render_advisor(title, msgs) for title, msgs in advisor_sections]
+    sections += [
+        _render_advisor(section_title, msgs) for section_title, msgs in advisor_sections
+    ]
 
     if unresolved:
         items = "".join(f"<li>{escape(u)}</li>" for u in unresolved)
@@ -353,11 +420,12 @@ def render_report(
             f"could not be included:<ul>{items}</ul></div>"
         )
 
+    header_title = title or f"NetPlanner Report — {project.name}"
     body = "".join(sections)
     return (
         "<!DOCTYPE html><html><head><meta charset='utf-8'>"
         f"<style>{_STYLESHEET}</style></head><body>"
-        f"{_render_header(project, f'NetPlanner Report — {project.name}')}"
+        f"{_render_header(project, header_title)}"
         f"{body}"
         f"<div class='disclaimer'>{escape(REPORT_DISCLAIMER)}</div>"
         "</body></html>"

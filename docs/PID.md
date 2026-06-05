@@ -24,7 +24,7 @@ NetPlanner is an AI-powered business decision support tool that helps network en
 9. Report footer disclaimer on every export: pricing is for planning purposes only, verify with vendors before formal budget submission
 
 **PIS-03 — Explicit exclusions (out of scope):**
-- No SSH connectivity or live network device access — that is NetSensei's lane
+- No SSH connectivity or live network device access 
 - No network topology visualization or diagramming
 - No real-time telemetry, alerting, or monitoring
 - No multi-user or team collaboration features

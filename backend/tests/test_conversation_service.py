@@ -5,19 +5,20 @@ from __future__ import annotations
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.project import Project
+from app.models.user import User
 from app.services import conversation_service
 
 
-async def _make_project(db: AsyncSession) -> Project:
-    project = Project(name="Advisor Test Project")
+async def _make_project(db: AsyncSession, owner: User) -> Project:
+    project = Project(name="Advisor Test Project", owner_id=owner.id)
     db.add(project)
     await db.commit()
     await db.refresh(project)
     return project
 
 
-async def test_create_conversation(db_session: AsyncSession) -> None:
-    project = await _make_project(db_session)
+async def test_create_conversation(db_session: AsyncSession, auth_user: User) -> None:
+    project = await _make_project(db_session, auth_user)
 
     conversation = await conversation_service.create_conversation(
         db_session, project.id, title="Vendor justification"
@@ -28,8 +29,10 @@ async def test_create_conversation(db_session: AsyncSession) -> None:
     assert conversation.title == "Vendor justification"
 
 
-async def test_get_conversation_found_and_missing(db_session: AsyncSession) -> None:
-    project = await _make_project(db_session)
+async def test_get_conversation_found_and_missing(
+    db_session: AsyncSession, auth_user: User
+) -> None:
+    project = await _make_project(db_session, auth_user)
     created = await conversation_service.create_conversation(db_session, project.id)
 
     fetched = await conversation_service.get_conversation(db_session, created.id)
@@ -39,8 +42,10 @@ async def test_get_conversation_found_and_missing(db_session: AsyncSession) -> N
     assert await conversation_service.get_conversation(db_session, "missing") is None
 
 
-async def test_add_and_list_messages_in_order(db_session: AsyncSession) -> None:
-    project = await _make_project(db_session)
+async def test_add_and_list_messages_in_order(
+    db_session: AsyncSession, auth_user: User
+) -> None:
+    project = await _make_project(db_session, auth_user)
     conversation = await conversation_service.create_conversation(
         db_session, project.id
     )
@@ -58,9 +63,9 @@ async def test_add_and_list_messages_in_order(db_session: AsyncSession) -> None:
 
 
 async def test_list_messages_empty_for_new_conversation(
-    db_session: AsyncSession,
+    db_session: AsyncSession, auth_user: User
 ) -> None:
-    project = await _make_project(db_session)
+    project = await _make_project(db_session, auth_user)
     conversation = await conversation_service.create_conversation(
         db_session, project.id
     )
@@ -68,8 +73,8 @@ async def test_list_messages_empty_for_new_conversation(
     assert await conversation_service.list_messages(db_session, conversation.id) == []
 
 
-async def test_list_conversations(db_session: AsyncSession) -> None:
-    project = await _make_project(db_session)
+async def test_list_conversations(db_session: AsyncSession, auth_user: User) -> None:
+    project = await _make_project(db_session, auth_user)
     await conversation_service.create_conversation(db_session, project.id, "First")
     await conversation_service.create_conversation(db_session, project.id, "Second")
 

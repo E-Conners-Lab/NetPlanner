@@ -6,11 +6,12 @@ handlers obtain a session via the `get_db` dependency (FastAPI `Depends`).
 
 from __future__ import annotations
 
+import logging
 import uuid
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 
-from sqlalchemy import DateTime
+from sqlalchemy import DateTime, text
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -19,6 +20,8 @@ from sqlalchemy.ext.asyncio import (
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 
 from app.config import get_settings
+
+logger = logging.getLogger(__name__)
 
 _settings = get_settings()
 
@@ -59,18 +62,77 @@ AsyncSessionLocal = async_sessionmaker(
 )
 
 
-async def init_db() -> None:
-    """Create all tables if they do not yet exist.
+def _alembic_head_revision() -> str:
+    """Read the head revision from the migration tree (no DB hit)."""
+    from alembic.config import Config
+    from alembic.script import ScriptDirectory
 
-    Invoked from the FastAPI lifespan handler. Alembic owns schema *changes*;
-    this is a convenience for first-run / development. It fails loud — a
-    broken DB is a mandatory-dependency failure, not something to swallow.
+    cfg = Config("alembic.ini")
+    script = ScriptDirectory.from_config(cfg)
+    head = script.get_current_head()
+    if head is None:
+        raise RuntimeError("Alembic has no head revision")
+    return head
+
+
+async def _current_db_revision() -> str | None:
+    async with engine.connect() as conn:
+        result = await conn.execute(
+            text("SELECT version_num FROM alembic_version LIMIT 1")
+        )
+        row = result.first()
+    return row[0] if row else None
+
+
+async def init_db() -> None:
+    """Initialize the database on startup.
+
+    Production behavior (`environment == "production"`): the migration head
+    must already be applied. We **never** silently fall back to
+    `create_all()` in production — that is a footgun (schemas drift, indexes
+    missing, alembic_version unwritten, future migrations break). Fail loud
+    if the operator has not run ``alembic upgrade head``.
+
+    Development behavior: tolerant first-run. If the database has no
+    `alembic_version` table at all we boot with `create_all()` so a fresh
+    `docker compose up` works without a migration step; if the table exists
+    but lags head we fail with a clear remediation message.
     """
-    # Import models so they register with `Base.metadata` before create_all.
+    # Import models so they register with `Base.metadata` before any usage.
     from app import models  # noqa: F401  (import for side effects)
 
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    expected_head = _alembic_head_revision()
+    try:
+        current = await _current_db_revision()
+    except Exception:  # alembic_version table does not exist yet
+        current = None
+
+    is_production = _settings.environment == "production"
+
+    if current is None:
+        if is_production:
+            raise RuntimeError(
+                "Database has not been initialized. Run "
+                "`alembic upgrade head` before starting the app."
+            )
+        logger.warning(
+            "init_db: no alembic_version found — creating schema directly "
+            "for development. Run `alembic upgrade head` to manage schema "
+            "via migrations."
+        )
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        return
+
+    if current != expected_head:
+        message = (
+            f"Database revision {current!r} is not at head {expected_head!r}. "
+            f"Run `alembic upgrade head` before starting the app."
+        )
+        if is_production:
+            raise RuntimeError(message)
+        logger.error(message)
+        raise RuntimeError(message)
 
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:

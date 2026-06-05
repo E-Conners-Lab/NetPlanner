@@ -38,4 +38,6 @@ USER appuser
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Apply Alembic migrations before launching uvicorn (production requires the
+# DB to be at head — `init_db` will refuse to start otherwise).
+CMD ["sh", "-c", "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000"]

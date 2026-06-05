@@ -32,6 +32,29 @@ logger = logging.getLogger(__name__)
 _MAX_TOKENS = 4096
 _UNAVAILABLE_VALUE = "Not available"
 
+# Summary shown when the model returns `stop_reason: "refusal"` — the safety
+# classifier blocked the synthesis (often the `cyber` classifier reacting to
+# security-adjacent terms in the per-vendor research). The matrix falls back to
+# all-`unavailable` so the UI still renders, with an honest reason in the summary.
+_REFUSAL_SUMMARY = (
+    "The comparison could not be generated: the model's safety classifier "
+    "blocked the response, usually in reaction to security-adjacent terms in "
+    "the research data rather than the vendors or criteria themselves. "
+    "Rephrasing the criteria or re-running the comparison typically resolves it."
+)
+
+
+def _log_refusal(response: Any) -> None:
+    """Record a model safety refusal with its structured stop details."""
+    details = getattr(response, "stop_details", None)
+    logger.warning(
+        "Comparison Agent refused by the model safety classifier "
+        "(stop_reason=refusal): category=%s explanation=%s",
+        getattr(details, "category", None),
+        getattr(details, "explanation", None),
+    )
+
+
 _COMPARISON_SYSTEM = """You are NetPlanner's vendor comparison analyst. Given a \
 set of network infrastructure vendors, evaluation criteria, and web research \
 data, produce a structured comparison matrix.
@@ -214,6 +237,15 @@ async def run_comparison_agent(
             criteria=criteria,
             matrix=_empty_matrix(vendors, criteria),
             summary="The comparison could not be generated. Please try again.",
+        )
+
+    if getattr(response, "stop_reason", None) == "refusal":
+        _log_refusal(response)
+        return ComparisonResult(
+            vendors=vendors,
+            criteria=criteria,
+            matrix=_empty_matrix(vendors, criteria),
+            summary=_REFUSAL_SUMMARY,
         )
 
     return _parse_response(vendors, criteria, response)

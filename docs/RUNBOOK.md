@@ -345,6 +345,173 @@ hallucinate a number.
 
 **Quality gate:** 136 backend tests pass (up from 111), coverage at **95.68%** (`app/schemas/tco.py`, `app/services/tco_service.py`, `app/routes/tco.py` each at 100%). All seven PID evals still pass — Eval 1 ($218,000 5-year total) is byte-for-byte unchanged because `refresh_events` defaults to empty. Ruff, black, isort, mypy, bandit, and `alembic check` all clean. Frontend lint + production build clean.
 
+### Phase 8 — Release-readiness security pass (2026-05-26)
+
+A pre-public-release audit found ten items spanning auth, dependency risk,
+PDF sanitization, rate limiting, prompt-injection boundaries, schema limits,
+production startup, report immutability, version-race correctness, and CI
+gates. All ten landed in one pass under SEC-01/02/03/16/17/27, AI-1, and
+SEC-29/35.
+
+**Shipped (additive where possible, breaking only where SEC-03 ownership
+required it):**
+
+- **Auth + identity layer.** New `User` ORM model with Argon2id-hashed
+  credentials (SEC-17, OWASP 2026 baseline `m=19 MiB, t=2, p=1`). JWT session
+  delivered exclusively via an httpOnly, Secure-by-default,
+  `SameSite=Strict` cookie (SEC-01, BFF pattern). `session_version` per user
+  is bumped on logout / password change so prior tokens stop validating
+  server-side (SEC-16). Routes: `POST /auth/register`, `POST /auth/login`,
+  `POST /auth/logout`, `GET /auth/me`. SPA gains an `AuthProvider`,
+  `ProtectedRoute`, and login/register pages.
+- **Ownership scoping.** `Project.owner_id` (FK → `users.id`, `ON DELETE
+  CASCADE`). Every project read/write filters on `owner_id`; every
+  project-scoped sub-route resolves through `project_service.get_project`,
+  so a TCO scenario / comparison / conversation / report under a project
+  owned by another user is unreachable. Cross-user access returns 404
+  (SEC-27 — never confirms existence). Test suite hardened with
+  `test_authz_cross_user.py` covering every read/write path.
+- **starlette CVE.** PYSEC-2026-161 fixed by bumping `starlette==1.0.0 →
+  1.0.1` in `uv.lock`. `pip-audit` clean.
+- **Report sanitization.** Advisor-authored markdown is now passed through
+  `bleach.clean` with a tight tag whitelist (no `<script>`, `<img>`,
+  `<iframe>`, `<object>`, `<a href=…>`); raw HTML, `file://`, `javascript:`,
+  remote image URLs, and inline event handlers are stripped before the PDF
+  renderer sees them. WeasyPrint's `url_fetcher` is replaced with a
+  blocking fetcher so anything that slipped past bleach still cannot reach
+  off-document.
+- **Rate limiting (SEC-06).** SlowAPI in-process limiter keyed by
+  authenticated user id (or stable token hash / IP for anon callers).
+  Limits — Advisor 10/min, Comparison 5/min, Report create 6/min, Report
+  download 15/min, Auth login 10/min, Auth register 5/min. 429 returns a
+  structured JSON body with `Retry-After`. Limiter is opt-out for tests via
+  `NETPLANNER_RATE_LIMIT_ENABLED=0` and re-enabled by the
+  `rate_limited_client` fixture.
+- **Prompt-injection boundary (AI-1, PIS-17).** Advisor system prompt order
+  is anchor → guardrails → guidance → explicit "UNTRUSTED data" preamble →
+  `<<PROJECT_CONTEXT>>…` fence. Project fields are escaped so a hostile
+  description containing the fence-close marker cannot break out and rewrite
+  the system role. Tests in `test_advisor_prompt_injection.py` assert the
+  anchor is always first and that hostile fence-close attempts are masked.
+- **Schema caps (SEC-05).** Project description/existing_infra capped at
+  4000; Advisor `message` at 4000; comparison vendor names (120) /
+  criterion strings (200) / criterion count (10); report `artifacts` count
+  (20); TCO `device_count` (1e6), per-unit costs (1e7), lump sums (1e9),
+  `refresh_events` count (10); project `budget_ceiling` (1e12). Frontend
+  login/register forms enforce the same email/password caps.
+- **Production DB lifecycle.** `init_db` no longer falls back to
+  `Base.metadata.create_all()` in production — it reads `alembic_version`
+  and fails loud if the schema is not at head. Development keeps the
+  forgiving first-run behavior so `docker compose up` works on a fresh
+  clone. Docker entrypoint scope: operators run `alembic upgrade head`
+  before the app starts.
+- **Immutable report snapshots.** `Report.pdf_blob` stores the PDF bytes at
+  create time. Re-download returns the snapshot verbatim — the TCO numbers
+  finance signed off on never silently change if the source scenario is
+  later edited or deleted. The renderer is not called again on re-download.
+- **User-submitted report title.** The Report Agent accepts an explicit
+  `title=` argument; the PDF header uses it instead of the legacy
+  `"NetPlanner Report — {project.name}"`. Filename slug also derives from
+  the user title.
+- **Advisor summarization (PIS-16).** `conversation_service.maybe_summarize_history`
+  triggers at ≥15 messages and folds the oldest 10 into
+  `Conversation.summary` (deterministic compression — the swap-in point for
+  an LLM-backed summarizer if we want one later). The Advisor's system
+  prompt embeds the summary after the project-context fence.
+- **TCO version-race fix.** Unique `(lineage_id, version)` constraint on
+  `tco_scenarios` (Alembic + ORM `UniqueConstraint`). `save_scenario` now
+  retries on `IntegrityError` so a race-loser re-reads
+  `max(version) + 1` and tries again instead of crashing with a 500.
+- **Transport polish.** HSTS is now opt-in via `ENABLE_HSTS=1` so local
+  HTTP dev does not pin browsers to HTTPS-only for a year. `/health`
+  remains a no-DB liveness probe; new `/ready` exercises the DB so
+  orchestrators can gate traffic. `RequestIDMiddleware` echoes /
+  generates an `X-Request-ID` per request and emits a structured access
+  log line (method/path/status/duration_ms/request_id).
+- **CI security gates blocking.** `pip-audit`, `npm audit` (`--audit-level=moderate`),
+  Semgrep, and TruffleHog all lost their `continue-on-error: true`. `pyjwt`
+  bumped to `2.12.0` to clear PYSEC-2026-120; semgrep `directly-returned-format-string`
+  false-positive marked with `nosemgrep` (this is a rate-limit key, not a
+  Flask response body).
+
+**Database & operations:**
+
+- New SQLite remains acceptable for single-tenant launch — every artifact
+  is scoped to a single user, so concurrent-write hot spots are minimal.
+  For multi-user deployments above ~50 active operators, switch
+  `DATABASE_URL` to `postgresql+asyncpg://…` and run `alembic upgrade head`
+  in production. The Alembic tree is dialect-agnostic except for the
+  legacy-owner backfill, which uses `CURRENT_TIMESTAMP` (both dialects).
+- New env vars: `JWT_SECRET` (required in production), `SESSION_COOKIE_SECURE`
+  (default true; flip to false for local plain HTTP), `SESSION_COOKIE_NAME`,
+  `SESSION_MAX_AGE_SECONDS`, `ENABLE_HSTS`. See `.env.example`.
+
+**Issues encountered and fixed:**
+
+| # | Issue | Cause | Fix |
+|---|---|---|---|
+| 8.1 | First migration autogenerate flagged a unique-index drift on `users.email` | The ORM marks `email` as `unique=True, index=True`; the hand-written migration created the index without `unique=True` | Set `unique=True` on the `ix_users_email` index in the migration; `alembic check` clean |
+| 8.2 | `concurrent_version_save_with_collision` test crashed with `IllegalStateChangeError` from SQLAlchemy | Two coroutines calling `db.commit()` on a single AsyncSession is unsupported | Rewrote the test as an out-of-band intruder row + a single retry call; the IntegrityError-retry path is exercised cleanly |
+| 8.3 | `pip-audit` flagged `pyjwt==2.10.1` after the auth layer landed | PYSEC-2026-120 affects pyjwt < 2.12.0 | Bumped to `2.12.0` in `pyproject.toml`; `uv lock` regenerates the lockfile |
+| 8.4 | Semgrep flagged `return f"user:{user_id}"` as a Flask format-string XSS | False positive — the function builds a rate-limit key, not a response body | Marked the lines with `# nosemgrep` and documented the context |
+
+**Quality gate:**
+
+| Check | Result |
+|---|---|
+| `ruff check app tests alembic` | clean |
+| `black --check app tests alembic` | clean |
+| `isort --check-only app tests alembic` | clean |
+| `mypy app --ignore-missing-imports` | clean |
+| `bandit -r app alembic -ll` | clean (low only) |
+| `alembic upgrade head && alembic check` | clean |
+| `pytest --cov=app --cov-fail-under=80` | **206 passed**, 1 skipped, **92.35% coverage** |
+| `pip-audit -r <lockfile>` | clean |
+| `npm run lint && npm run build` | clean |
+| `npm audit --audit-level=moderate` | 0 vulnerabilities |
+| `semgrep scan --config=auto --error` | 0 findings |
+
+All seven PID evals still pass (the test runner exercises Eval 1, 4, 6, 7
+automatically; Eval 2/3/5 remain manual review per PIS-09). The PIS-10
+acceptance gate (6/7, both zero-tolerance evals passing) is preserved.
+
+### Phase 9 — Open-source release hardening (2026-06-05)
+
+A pre-publication scan (secrets/history sweep + parallel security, OSS-readiness,
+and dependency audits) confirmed the repo was close to release-ready — clean git
+history, no committed secrets, MIT licensed — and surfaced a punch-list of gaps
+against the Secure Build Standard. All closed in one pass.
+
+**Shipped:**
+
+- **CSRF double-submit (SEC-07).** New `CSRFMiddleware` enforces an
+  `X-CSRF-Token` header (constant-time compared, SEC-26) against a readable
+  `netplanner_csrf` cookie on every mutating `/api` request; safe methods seed
+  the cookie, and `GET /auth/csrf` gives the SPA a reliable seed point. Axios
+  attaches the header for unsafe methods; `useStream` does the same for the SSE
+  POST. Enforcement is opt-out for the suite via `NETPLANNER_CSRF_ENABLED=0`,
+  re-enabled in `test_csrf.py`.
+- **Bearer fallback removed (SEC-01).** `auth._extract_token` and the rate-limit
+  key func now read the session JWT only from the httpOnly cookie — no
+  `Authorization: Bearer` path that could tempt a client to hold the token in
+  JS-readable memory.
+- **Account lockout + audit log (SEC-06 / SEC-28).** Five consecutive failed
+  logins lock an account for 15 minutes (`users.failed_login_count` /
+  `locked_until`, migration `b7e2c4f9a1d3`); the lock is not revealed to the
+  caller (generic 401, SEC-18). A dedicated `app.audit` logger records login
+  success/failure/lock and logout — keyed by `user_id` or a salted email
+  fingerprint, never raw PII or passwords.
+- **Transport headers (SEC-08 / SEC-09 / SEC-24).** HSTS now emits
+  automatically in production (no longer a forgettable flag); API responses
+  carry `Cache-Control: no-store` and a deny-all `Content-Security-Policy`.
+- **Dependency + repo hygiene.** `react-router-dom 6.30.3 → 6.30.4` clears
+  `GHSA-2j2x-hqr9-3h42` (open redirect); `.claude/` untracked and gitignored;
+  `AGENTS.md` find-replace artifacts fixed; README gains a License section.
+
+**Quality gate:** ruff / black / isort / mypy clean; `bandit -ll` clean;
+`alembic upgrade head && alembic check` clean; **pytest 213 passed, 1 skipped,
+92.92% coverage**; frontend ESLint + build clean; `npm audit` 0 vulnerabilities.
+
 ---
 
 ## 7. Troubleshooting
@@ -361,6 +528,13 @@ hallucinate a number.
 | `cannot load library 'libgobject-2.0-0'` from WeasyPrint | Native Pango/Cairo libraries missing or off the dyld path (macOS) | `brew install pango`, then run with `DYLD_FALLBACK_LIBRARY_PATH=/opt/homebrew/lib`; Docker already installs them on the default path |
 | `alembic check` reports drift | ORM models changed without a migration | `alembic revision --autogenerate -m "..."` |
 | Anthropic API returns `401 invalid x-api-key` despite a valid `.env` key | An `ANTHROPIC_API_KEY` exported in the shell shadows `.env` (env vars outrank `.env`) | Unset/fix the shell var, or run with `env -u ANTHROPIC_API_KEY`; Docker is unaffected |
+| App refuses to boot in production with `RuntimeError: Database has not been initialized` | `init_db` now requires the DB to be at the Alembic head (it no longer falls back to `create_all`) | Run `alembic upgrade head` before launching, or fix the running revision drift |
+| `RuntimeError: JWT_SECRET is required in production` at startup | Auth needs a strong, persistent signing key — empty default is rejected when `ENVIRONMENT=production` | Set `JWT_SECRET` to a long random value: `python -c "import secrets;print(secrets.token_urlsafe(48))"` |
+| Login succeeds but every subsequent call returns 401 | `SESSION_COOKIE_SECURE=true` but the deployment is HTTP-only | Set `SESSION_COOKIE_SECURE=false` for local dev, or terminate TLS so `Secure` cookies actually round-trip |
+| Browser pinned to HTTPS on local dev | `ENABLE_HSTS=1` was set and the browser cached `Strict-Transport-Security` for a year | Clear HSTS for the host in the browser; leave `ENABLE_HSTS=0` unless production HTTPS is wired up |
+| `429 Too many requests` during testing | Rate limiter (SEC-06) is firing on the per-user / per-IP window | For local exploration, restart the server (in-process counters reset); for tests, the suite-wide `NETPLANNER_RATE_LIMIT_ENABLED=0` flag keeps the limiter off |
+| `403 CSRF validation failed` on a POST/PUT/DELETE | The request lacks a matching `X-CSRF-Token` header (SEC-07) | In the SPA this is automatic; for manual `curl`/Postman, `GET /api/auth/csrf` first, then echo the `netplanner_csrf` cookie value in the `X-CSRF-Token` header. The suite-wide `NETPLANNER_CSRF_ENABLED=0` flag keeps enforcement off for tests |
+| Account returns `Invalid email or password` for a known-good password | Five consecutive failed logins locked the account for 15 minutes (SEC-06) | Wait out the 15-minute window, or clear `failed_login_count` / `locked_until` on the `users` row in dev |
 
 ---
 
@@ -376,8 +550,9 @@ hallucinate a number.
 | 5 | Report generation (PDF) | ✅ Complete |
 | 6 | Polish — design, error states, full eval run | ✅ Complete |
 | 7 | Mid-cycle refresh + version snapshots + TCO comparison (PID amendment 1.5) | ✅ Complete |
+| 8 | Release-readiness security pass (auth, ownership scoping, rate limiting, immutable reports, prompt-injection boundary, schema caps, production DB lifecycle, CI security gates) | ✅ Complete |
 
-NetPlanner v1 cleared the PID acceptance gate (7/7 evals); Phase 7 added the refresh / versioning / comparison capabilities behind PID amendment 1.5 without breaking any existing contract.
+NetPlanner v1 cleared the PID acceptance gate (7/7 evals); Phase 7 added the refresh / versioning / comparison capabilities behind PID amendment 1.5 without breaking any existing contract; Phase 8 made the app safe for public release (auth, ownership scoping, dependency CVE patch, rate limiting, immutable report snapshots, hardened PDF rendering).
 
 ### Planned enhancements (post-v1)
 

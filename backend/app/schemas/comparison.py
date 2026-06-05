@@ -25,8 +25,29 @@ class ComparisonRequest(BaseModel):
     where vendor[1] was a substring of vendor[0].
     """
 
+    # PIS-02 #4 caps comparisons at 2–3 platforms. The string-length and
+    # criteria-count caps protect the prompt budget and the matrix layout
+    # (PIS-14 / PIS-18).
     vendors: list[str] = Field(..., min_length=2, max_length=3)
-    criteria: list[str] = Field(..., min_length=1)
+    criteria: list[str] = Field(..., min_length=1, max_length=10)
+
+    @field_validator("vendors")
+    @classmethod
+    def _validate_vendor_lengths(cls, vendors: list[str]) -> list[str]:
+        # `_validate_vendors` below normalizes and uniques — this guards the
+        # raw input length before that normalization.
+        for v in vendors:
+            if len(v) > 120:
+                raise ValueError("Vendor name too long (120 character limit).")
+        return vendors
+
+    @field_validator("criteria")
+    @classmethod
+    def _validate_criterion_lengths(cls, criteria: list[str]) -> list[str]:
+        for c in criteria:
+            if len(c) > 200:
+                raise ValueError("Criterion too long (200 character limit).")
+        return criteria
 
     @field_validator("vendors")
     @classmethod

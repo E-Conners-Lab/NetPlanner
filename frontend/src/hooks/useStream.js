@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { CSRF_HEADER, readCsrfToken } from '../api/csrf.js';
 
 /**
  * useStream — manages an SSE-style streaming conversation with the Advisor endpoint.
@@ -62,9 +63,14 @@ export default function useStream(projectId) {
         const apiBase = import.meta.env.VITE_API_URL || '/api';
         const url = `${apiBase}/projects/${projectId}/advisor`;
 
+        const csrfToken = readCsrfToken();
         const response = await fetch(url, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(csrfToken ? { [CSRF_HEADER]: csrfToken } : {}),
+          },
+          credentials: 'include',
           body: JSON.stringify({
             message: trimmed,
             conversation_id: conversationIdRef.current,
@@ -72,6 +78,13 @@ export default function useStream(projectId) {
           signal: controller.signal,
         });
 
+        if (response.status === 401) {
+          window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+          throw new Error('Your session has expired. Please sign in again.');
+        }
+        if (response.status === 429) {
+          throw new Error('Too many requests — please slow down and retry shortly.');
+        }
         if (!response.ok) {
           // Try to read a detail message from the body before throwing.
           let detail = `Request failed: ${response.status}`;

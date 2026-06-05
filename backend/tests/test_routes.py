@@ -462,13 +462,13 @@ async def test_report_redownload_missing_report_returns_404(
 
 
 async def test_list_conversation_messages_returns_history(
-    client: AsyncClient, db_session: AsyncSession
+    client: AsyncClient, db_session: AsyncSession, auth_user: object
 ) -> None:
     """GET /conversations/:id/messages returns the chronological history."""
     from app.models.conversation import Conversation, Message
     from app.models.project import Project
 
-    project = Project(name="Hist")
+    project = Project(name="Hist", owner_id=auth_user.id)  # type: ignore[attr-defined]
     db_session.add(project)
     await db_session.commit()
     await db_session.refresh(project)
@@ -496,14 +496,14 @@ async def test_list_conversation_messages_returns_history(
 
 
 async def test_list_conversation_messages_wrong_project_returns_404(
-    client: AsyncClient, db_session: AsyncSession
+    client: AsyncClient, db_session: AsyncSession, auth_user: object
 ) -> None:
     """SEC-27 — a conversation in project A is not retrievable via project B."""
     from app.models.conversation import Conversation
     from app.models.project import Project
 
-    project_a = Project(name="A")
-    project_b = Project(name="B")
+    project_a = Project(name="A", owner_id=auth_user.id)  # type: ignore[attr-defined]
+    project_b = Project(name="B", owner_id=auth_user.id)  # type: ignore[attr-defined]
     db_session.add_all([project_a, project_b])
     await db_session.commit()
     await db_session.refresh(project_a)
@@ -575,7 +575,7 @@ async def test_advisor_streams_response_and_persists(
 ) -> None:
     """A project with context streams an answer and persists both messages."""
 
-    async def _fake_turn(history: object, context: object):
+    async def _fake_turn(history: object, context: object, summary: str | None = None):
         yield "Frame it as "
         yield "a 5-year TCO."
 

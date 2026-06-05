@@ -95,18 +95,47 @@ async def resolve_artifacts(
 
 
 async def save_report(
-    db: AsyncSession, project_id: str, title: str, artifacts: list[ReportArtifact]
+    db: AsyncSession,
+    project_id: str,
+    title: str,
+    artifacts: list[ReportArtifact],
+    pdf_bytes: bytes | None = None,
 ) -> Report:
-    """Persist metadata for a generated report (export history)."""
+    """Persist a generated report and its immutable PDF snapshot.
+
+    `pdf_bytes` is the authoritative artifact for re-downloads; the artifact
+    references are kept alongside it as audit history (what was included) and
+    are no longer re-resolved on read.
+    """
     report = Report(
         project_id=project_id,
         title=title,
         included_artifacts=[a.model_dump() for a in artifacts],
+        pdf_blob=pdf_bytes,
     )
     db.add(report)
     await db.commit()
     await db.refresh(report)
     return report
+
+
+async def load_report_pdf(report: Report) -> bytes | None:
+    """Return the immutable PDF bytes for a saved report, or ``None``.
+
+    Bytes live in `pdf_blob` for reports created since the immutable-snapshot
+    rollout. The `file_path` fallback handles a future move-to-disk storage
+    backend; if both are empty, the snapshot is no longer recoverable and
+    the route layer returns 410 Gone.
+    """
+    if report.pdf_blob is not None:
+        return bytes(report.pdf_blob)
+    if report.file_path:
+        try:
+            with open(report.file_path, "rb") as handle:
+                return handle.read()
+        except OSError:
+            return None
+    return None
 
 
 async def list_reports(db: AsyncSession, project_id: str) -> list[Report]:

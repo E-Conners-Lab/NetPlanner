@@ -6,6 +6,13 @@ from datetime import datetime
 
 from pydantic import BaseModel, ConfigDict, Field
 
+# Sanity caps on TCO numeric inputs — keep individual figures inside a
+# realistic planning envelope. The PIS-21 reasonableness check still
+# catches outliers; these caps just prevent unbounded overflow / abuse.
+_DEVICE_COUNT_MAX = 1_000_000
+_PER_UNIT_COST_MAX = 10_000_000.0  # per-device, per-year line
+_LUMP_COST_MAX = 1_000_000_000.0  # one-time lump sums (install / training)
+
 
 class RefreshEvent(BaseModel):
     """A mid-cycle hardware refresh inside a TCO lifecycle (PID amendment 1.5).
@@ -40,6 +47,7 @@ class RefreshEvent(BaseModel):
     cost_per_unit_override: float | None = Field(
         default=None,
         ge=0,
+        le=_PER_UNIT_COST_MAX,
         description=(
             "Optional override cost per refreshed unit. If None, the original "
             "hardware_cost_per_unit is used."
@@ -68,23 +76,27 @@ class TCOFormInputs(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
-    device_count: int = Field(..., gt=0, description="Number of network devices")
-    hardware_cost_per_unit: float = Field(..., ge=0)
-    licensing_cost_per_unit_year: float = Field(..., ge=0)
-    support_cost_year_one: float = Field(default=0.0, ge=0)
+    device_count: int = Field(
+        ..., gt=0, le=_DEVICE_COUNT_MAX, description="Number of network devices"
+    )
+    hardware_cost_per_unit: float = Field(..., ge=0, le=_PER_UNIT_COST_MAX)
+    licensing_cost_per_unit_year: float = Field(..., ge=0, le=_PER_UNIT_COST_MAX)
+    support_cost_year_one: float = Field(default=0.0, ge=0, le=_LUMP_COST_MAX)
     lifecycle_years: int = Field(default=5, ge=1, le=5)
-    device_category: str = Field(default="access_point")
+    device_category: str = Field(default="access_point", max_length=60)
 
     # PID amendment 1.3 — additional cost categories. All Y1 one-time unless
     # noted; all optional with explicit $0 default.
     installation_cost: float = Field(
         default=0.0,
         ge=0,
+        le=_LUMP_COST_MAX,
         description="One-time Y1 professional services / install labor",
     )
     accessories_cost_per_unit: float = Field(
         default=0.0,
         ge=0,
+        le=_PER_UNIT_COST_MAX,
         description="One-time Y1 per-device accessories (mounts, cables, optics)",
     )
     spares_percent: float = Field(
@@ -96,22 +108,26 @@ class TCOFormInputs(BaseModel):
     training_cost: float = Field(
         default=0.0,
         ge=0,
+        le=_LUMP_COST_MAX,
         description="One-time Y1 migration / training labor",
     )
     support_cost_recurring_per_year: float = Field(
         default=0.0,
         ge=0,
+        le=_LUMP_COST_MAX,
         description="Recurring support contract from Y2 onward",
     )
     adjacent_recurring_cost_per_year: float = Field(
         default=0.0,
         ge=0,
+        le=_LUMP_COST_MAX,
         description="Adjacent existing-stack recurring (e.g. NAC); applies Y1-Y5",
     )
 
     # PID amendment 1.5 — mid-cycle hardware refreshes. Empty by default.
     refresh_events: list[RefreshEvent] = Field(
         default_factory=list,
+        max_length=10,
         description="Mid-cycle hardware refresh events; empty = no refresh.",
     )
 
@@ -171,6 +187,7 @@ class TCOScenarioCreate(BaseModel):
     inputs: TCOFormInputs
     parent_scenario_id: str | None = Field(
         default=None,
+        max_length=36,
         description=(
             "Optional id of an existing scenario to save this as a new version "
             "of. The new row inherits the parent's lineage_id and bumps version "

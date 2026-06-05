@@ -12,6 +12,9 @@ dependencies = [
     # --- Web framework ---
     "fastapi==0.136.1",
     "uvicorn[standard]==0.47.0",
+    # Pinned >=1.0.1 to fix PYSEC-2026-161 (DoS via Content-Type header in
+    # MultiPartParser). fastapi 0.136.1 supports starlette >=0.42,<1.1.
+    "starlette==1.0.1",
     # --- Database (async SQLite) ---
     "SQLAlchemy==2.0.49",
     "aiosqlite==0.22.1",
@@ -26,6 +29,17 @@ dependencies = [
     # --- PDF generation ---
     "weasyprint==68.1",
     "markdown==3.10.2",
+    # Whitelist-based HTML sanitizer for Advisor-authored markdown rendered
+    # into PDF reports (defends against <script>, javascript:, file://, etc.).
+    "bleach==6.2.0",
+    # --- Authentication (SEC-01 / SEC-17) ----------------------------------
+    # Argon2id password hashing (SEC-17, OWASP 2026 baseline).
+    "argon2-cffi==23.1.0",
+    # JWT signing for the BFF httpOnly session cookie (SEC-01).
+    # 2.13.0 fixes PYSEC-2026-175..179 (pip-audit / SEC-29).
+    "PyJWT==2.13.0",
+    # --- Rate limiting / DoS controls (SEC-06) -----------------------------
+    "slowapi==0.1.9",
 ]
 
 # Dev-only tooling: testing, linting, formatting, type checking, security

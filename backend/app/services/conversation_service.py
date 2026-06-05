@@ -102,3 +102,67 @@ async def add_message(
     await db.commit()
     await db.refresh(message)
     return message
+
+
+# PIS-16 — at this many stored messages, fold the oldest into a summary so the
+# Advisor's system prompt stays inside the token budget on long sessions.
+_SUMMARIZE_AT = 15
+_SUMMARIZE_OLDEST_N = 10
+# Hard cap on the per-summary text length (bytes). A summary is compressed
+# context, not a verbatim transcript.
+_SUMMARY_MAX_LENGTH = 1200
+
+
+def _compress_messages(messages: list[Message]) -> str:
+    """Build a deterministic plain-text summary of message bodies.
+
+    PIS-16 names "summarize" — the operating decision here is to do that
+    deterministically rather than by spending a model call. The summary
+    captures the gist (role + truncated body, separated by sentences) and
+    leaves the recent history intact so the model still has fresh detail. If
+    summarization-via-LLM is wanted later, this is the swap-in point.
+    """
+    parts: list[str] = []
+    for message in messages:
+        prefix = "User" if message.role == "user" else "Advisor"
+        body = " ".join(message.content.split())  # collapse whitespace
+        # Cap each per-message contribution to keep the summary short.
+        if len(body) > 240:
+            body = body[:240].rsplit(" ", 1)[0] + "…"
+        parts.append(f"{prefix}: {body}")
+    blob = " | ".join(parts)
+    if len(blob) > _SUMMARY_MAX_LENGTH:
+        blob = blob[: _SUMMARY_MAX_LENGTH - 1].rsplit(" ", 1)[0] + "…"
+    return blob
+
+
+async def maybe_summarize_history(db: AsyncSession, conversation_id: str) -> None:
+    """Implement PIS-16's context degradation strategy.
+
+    Once a conversation crosses the threshold, fold the oldest messages into
+    `Conversation.summary` and delete those rows. The Advisor agent embeds
+    the summary into the system prompt on subsequent turns so context
+    survives the trim. No-op when the conversation is under the threshold.
+    """
+    messages = await list_messages(db, conversation_id)
+    if len(messages) < _SUMMARIZE_AT:
+        return
+
+    conversation = await get_conversation(db, conversation_id)
+    if conversation is None:
+        return
+
+    oldest = messages[:_SUMMARIZE_OLDEST_N]
+    compressed = _compress_messages(oldest)
+    if conversation.summary:
+        # Concatenate so we keep history of prior summaries within the cap.
+        combined = f"{conversation.summary} | {compressed}"
+        if len(combined) > _SUMMARY_MAX_LENGTH:
+            combined = combined[: _SUMMARY_MAX_LENGTH - 1].rsplit(" ", 1)[0] + "…"
+        conversation.summary = combined
+    else:
+        conversation.summary = compressed
+
+    for message in oldest:
+        await db.delete(message)
+    await db.commit()
