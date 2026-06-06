@@ -7,10 +7,10 @@ and 5 are manual review per PIS-09, but the matrix-completeness and
 
 from __future__ import annotations
 
-from types import SimpleNamespace
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 from app.agents.comparison import run_comparison_agent
+from app.agents.llm import LLMResult
 from app.schemas.project import ProjectContext
 
 _CTX = ProjectContext(
@@ -39,17 +39,17 @@ _FULL = (
 )
 
 
-def _response(text: str) -> SimpleNamespace:
-    return SimpleNamespace(content=[SimpleNamespace(type="text", text=text)])
+def _patch_complete(
+    *, text: str = "", refused: bool = False, error: Exception | None = None
+):
+    """Patch the provider-agnostic wrapper the Comparison agent calls."""
 
+    async def _fake_complete(**_kwargs: object) -> LLMResult:
+        if error is not None:
+            raise error
+        return LLMResult(text=text, refused=refused)
 
-def _mock_client(*, response: object | None = None, error: Exception | None = None):
-    client = MagicMock()
-    if error is not None:
-        client.messages.create = AsyncMock(side_effect=error)
-    else:
-        client.messages.create = AsyncMock(return_value=response)
-    return client
+    return patch("app.agents.comparison.complete", new=_fake_complete)
 
 
 def _every_cell_present(result) -> bool:
@@ -62,8 +62,7 @@ def _every_cell_present(result) -> bool:
 
 async def test_comparison_builds_full_matrix() -> None:
     # Eval 3: every criterion populated for both vendors, no empty cells.
-    client = _mock_client(response=_response(_FULL))
-    with patch("app.agents.comparison.get_anthropic_client", return_value=client):
+    with _patch_complete(text=_FULL):
         result = await run_comparison_agent(_VENDORS, _CRITERIA, [], _CTX)
 
     assert result.vendors == _VENDORS
@@ -79,8 +78,7 @@ async def test_comparison_fills_missing_cells_as_unavailable() -> None:
         '"value": "Subscription", "source": "x", "confidence": "confirmed"}], '
         '"summary": "Partial data."}'
     )
-    client = _mock_client(response=_response(partial))
-    with patch("app.agents.comparison.get_anthropic_client", return_value=client):
+    with _patch_complete(text=partial):
         result = await run_comparison_agent(_VENDORS, _CRITERIA, [], _CTX)
 
     assert _every_cell_present(result)
@@ -91,8 +89,7 @@ async def test_comparison_fills_missing_cells_as_unavailable() -> None:
 
 async def test_comparison_malformed_json_yields_unavailable_matrix() -> None:
     # PIS-20: unparseable output degrades to a full `unavailable` matrix.
-    client = _mock_client(response=_response("sorry, could not compare"))
-    with patch("app.agents.comparison.get_anthropic_client", return_value=client):
+    with _patch_complete(text="sorry, could not compare"):
         result = await run_comparison_agent(_VENDORS, _CRITERIA, [], _CTX)
 
     assert _every_cell_present(result)
@@ -105,8 +102,7 @@ async def test_comparison_malformed_json_yields_unavailable_matrix() -> None:
 
 async def test_comparison_api_error_yields_unavailable_matrix() -> None:
     # PIS-20: an API failure must not crash the route.
-    client = _mock_client(error=RuntimeError("API down"))
-    with patch("app.agents.comparison.get_anthropic_client", return_value=client):
+    with _patch_complete(error=RuntimeError("API down")):
         result = await run_comparison_agent(_VENDORS, _CRITERIA, [], _CTX)
 
     assert _every_cell_present(result)
@@ -125,8 +121,7 @@ async def test_comparison_discards_cell_with_invalid_confidence() -> None:
         '"value": "Subscription", "source": "", "confidence": "super-sure"}], '
         '"summary": "s"}'
     )
-    client = _mock_client(response=_response(bad))
-    with patch("app.agents.comparison.get_anthropic_client", return_value=client):
+    with _patch_complete(text=bad):
         result = await run_comparison_agent(_VENDORS, _CRITERIA, [], _CTX)
 
     assert result.matrix["Cisco Meraki"]["licensing model"].confidence == "unavailable"
