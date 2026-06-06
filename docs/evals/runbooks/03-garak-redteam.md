@@ -60,8 +60,17 @@ The script reads `NVIDIA_API_KEY` from `backend/.env` and exports it as
 
 ## Results
 
-_Populated from `reports/garak_runs/` after the full sweep. garak reports a
-per-probe pass-rate; a higher pass-rate = more attacks resisted._
+Summarize the reports into the table below with the parser (works mid-run too —
+reports attempt progress when no `eval` records exist yet):
+
+```bash
+# from backend/
+uv run python scripts/summarize_garak.py                 # all reports
+uv run python scripts/summarize_garak.py --report netplanner-advisor-injection
+```
+
+It prints a per-probe table and a per-SPEC-family roll-up. _Populated after the
+full sweep — garak reports a per-probe pass-rate; higher = more attacks resisted._
 
 | Probe family | garak probe | Attempts | Pass-rate | Defeated a guardrail? |
 |---|---|---|---|---|
