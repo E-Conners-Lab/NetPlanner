@@ -42,10 +42,11 @@ commands and real issues as that phase runs, not pre-written.
 | Phase | Runbook | Deliverable | Status |
 |---|---|---|---|
 | 0 · Setup | [`runbooks/00-nvidia-setup.md`](runbooks/00-nvidia-setup.md) | Scoped NVIDIA key + Nemotron-first model shortlist | ✅ done (2026-06-05) |
-| 1 · Provider layer | [`runbooks/01-litellm-provider-layer.md`](runbooks/01-litellm-provider-layer.md) | LiteLLM abstraction behind the agent client | ⬜ not started |
+| 1 · Provider layer | [`runbooks/01-litellm-provider-layer.md`](runbooks/01-litellm-provider-layer.md) | LiteLLM abstraction behind the agent client | 🟡 in progress (Comparison done; Advisor next) |
 | 2 · Accuracy eval | [`runbooks/02-nemo-evaluator.md`](runbooks/02-nemo-evaluator.md) | NeMo Evaluator scores: Nemotron vs Claude baseline | ⬜ not started |
 | 3 · Red-team | [`runbooks/03-garak-redteam.md`](runbooks/03-garak-redteam.md) | garak report on the Advisor agent | ⬜ not started |
 | 4 · Writeup | [`runbooks/04-results-and-writeup.md`](runbooks/04-results-and-writeup.md) | Results tables + LinkedIn draft | ⬜ not started |
+| 5 · OpenRouter (optional) | [`runbooks/05-openrouter-byo-provider.md`](runbooks/05-openrouter-byo-provider.md) | OpenRouter spike for production BYO-provider — separate angle, not required for the core verdict | ⬜ stub |
 
 Full goals, scope, success criteria, and the identity/secrets table are in
 [`SPEC.md`](SPEC.md). The running lab notebook is [`ISSUES-LOG.md`](ISSUES-LOG.md).

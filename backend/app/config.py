@@ -7,8 +7,13 @@ and never committed. See `.env.example` for the expected variables.
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+# Supported LLM providers. ``anthropic`` is the production default; ``nvidia_nim``
+# routes through LiteLLM to the NVIDIA API catalog for the multi-provider eval.
+Provider = Literal["anthropic", "nvidia_nim"]
 
 
 class Settings(BaseSettings):
@@ -35,6 +40,17 @@ class Settings(BaseSettings):
     # --- Secrets (SEC-12) --------------------------------------------------
     # Empty by default; the AI layer (Phase 2+) fails loud if it is missing.
     anthropic_api_key: str = ""
+
+    # --- LLM provider (multi-provider eval) --------------------------------
+    # ``anthropic`` (default) keeps the native Anthropic path untouched.
+    # ``nvidia_nim`` routes agents through LiteLLM to the NVIDIA API catalog
+    # for evaluation only — never the production default. Scoped, dev-only key
+    # (SEC-13/15); fails loud via ``require_nvidia_api_key`` when selected.
+    provider: Provider = "anthropic"
+    nvidia_api_key: str = ""
+    # Catalog model id used for all NVIDIA-routed agents during the eval.
+    # Override per-run (e.g. to the comparator) via NVIDIA_MODEL in .env.
+    nvidia_model: str = "nvidia/nemotron-3-super-120b-a12b"
 
     # --- Authentication (SEC-01 / SEC-14 / SEC-16) -------------------------
     # JWT signing secret. Empty in dev means a generated per-process key —
@@ -93,6 +109,20 @@ class Settings(BaseSettings):
                 "Set it in your environment or .env file."
             )
         return self.anthropic_api_key
+
+    def require_nvidia_api_key(self) -> str:
+        """Return the NVIDIA API key, failing loud if it is unset (SEC-12).
+
+        Only called when ``provider == "nvidia_nim"``. The scoped, dev-only
+        catalog key (SEC-13/15) must be set explicitly — a missing key fails
+        fast here rather than producing a confusing LiteLLM auth error.
+        """
+        if not self.nvidia_api_key:
+            raise ValueError(
+                "NVIDIA_API_KEY is required when provider=nvidia_nim. "
+                "Set it in your environment or .env file."
+            )
+        return self.nvidia_api_key
 
     def require_jwt_secret(self) -> str:
         """Return the JWT signing secret (SEC-12 / SEC-14).

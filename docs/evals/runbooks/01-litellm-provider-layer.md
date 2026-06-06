@@ -2,7 +2,8 @@
 
 **Phase:** 1 · **Goal:** route NetPlanner's agents to Anthropic **or** NVIDIA NIM
 through one abstraction, without breaking the Claude default.
-**Status:** ⬜ not started
+**Status:** 🟡 in progress — provider layer + Comparison agent done (2026-06-05);
+Advisor (streaming + tool loop) is the next sub-step.
 
 ---
 
@@ -48,10 +49,29 @@ tool-call format, streaming event shape, and stop-reason enums.
 
 ## Verification
 
-- [ ] `provider=anthropic` → existing tests pass unchanged (no behavior drift).
-- [ ] `provider=nvidia_nim` → Comparison agent returns a valid matrix on a fixture.
-- [ ] Advisor streams tokens and completes ≥1 tool-call round on Nemotron.
-- [ ] Coverage stays ≥ 80% (testing standard).
+- [x] `provider=anthropic` → full suite passes unchanged, 228 passed / 1 skipped
+      (no behavior drift; production path byte-for-byte the same).
+- [x] Provider layer in place: `app/agents/llm.py` `complete()` dispatches on the
+      `provider` setting; Comparison agent now calls it instead of the SDK.
+- [x] NVIDIA path unit-tested (LiteLLM `nvidia_nim/` model id, scoped key,
+      `drop_params`, thinking-strip) — `llm.py` 100% covered; project total 93%.
+- [x] `litellm==1.87.1` pinned (SEC-30); `pip-audit` clean (SEC-29).
+- [ ] **Live** `provider=nvidia_nim` run of the Comparison agent on a real
+      fixture (deferred to Phase 2, where fixtures are built).
+- [ ] Advisor streams tokens and completes ≥1 tool-call round on Nemotron
+      (next sub-step — streaming + tool translation is the harder port).
+
+## What landed (2026-06-05)
+
+- `config.py`: `provider` flag (default `anthropic`), `nvidia_api_key`,
+  `nvidia_model`, `require_nvidia_api_key()` fail-fast accessor.
+- `app/agents/llm.py`: provider-agnostic `complete()` + `LLMResult`; native
+  Anthropic path preserves `effort` + refusal semantics; NVIDIA path via LiteLLM
+  strips reasoning chain-of-thought (Finding #1).
+- `comparison.py`: now provider-agnostic — calls `complete(role="comparison", …)`,
+  reads `LLMResult.text` / `.refused`. No route or schema changes.
+- Refusal logging moved into the wrapper; `test_agent_refusal` re-pointed to the
+  new seam. Advisor + Research stay on the native path this PR.
 
 ## Issues encountered
 

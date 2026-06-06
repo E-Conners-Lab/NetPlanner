@@ -17,12 +17,10 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
 
 from pydantic import ValidationError
 
-from app.agents.client import get_anthropic_client
-from app.config import get_settings
+from app.agents.llm import complete
 from app.schemas.comparison import ComparisonCell, ComparisonResult
 from app.schemas.project import ProjectContext
 from app.schemas.research import ResearchResult
@@ -42,17 +40,6 @@ _REFUSAL_SUMMARY = (
     "the research data rather than the vendors or criteria themselves. "
     "Rephrasing the criteria or re-running the comparison typically resolves it."
 )
-
-
-def _log_refusal(response: Any) -> None:
-    """Record a model safety refusal with its structured stop details."""
-    details = getattr(response, "stop_details", None)
-    logger.warning(
-        "Comparison Agent refused by the model safety classifier "
-        "(stop_reason=refusal): category=%s explanation=%s",
-        getattr(details, "category", None),
-        getattr(details, "explanation", None),
-    )
 
 
 _COMPARISON_SYSTEM = """You are NetPlanner's vendor comparison analyst. Given a \
@@ -218,20 +205,18 @@ async def run_comparison_agent(
         ComparisonResult: a fully-populated matrix plus a balanced summary.
         On failure the matrix is all-`unavailable` (PIS-20).
     """
-    client = get_anthropic_client()
-    settings = get_settings()
     prompt = _build_prompt(vendors, criteria, research_data, project_context)
 
     try:
-        response = await client.messages.create(
-            model=settings.comparison_model,
-            max_tokens=_MAX_TOKENS,
+        result = await complete(
+            role="comparison",
             system=_COMPARISON_SYSTEM,
-            output_config={"effort": "medium"},
-            messages=[{"role": "user", "content": prompt}],  # type: ignore[arg-type]
+            user=prompt,
+            max_tokens=_MAX_TOKENS,
+            effort="medium",
         )
     except Exception:
-        logger.exception("Comparison Agent API call failed")
+        logger.exception("Comparison Agent LLM call failed")
         return ComparisonResult(
             vendors=vendors,
             criteria=criteria,
@@ -239,8 +224,7 @@ async def run_comparison_agent(
             summary="The comparison could not be generated. Please try again.",
         )
 
-    if getattr(response, "stop_reason", None) == "refusal":
-        _log_refusal(response)
+    if result.refused:
         return ComparisonResult(
             vendors=vendors,
             criteria=criteria,
@@ -248,18 +232,13 @@ async def run_comparison_agent(
             summary=_REFUSAL_SUMMARY,
         )
 
-    return _parse_response(vendors, criteria, response)
+    return _parse_response(vendors, criteria, result.text)
 
 
 def _parse_response(
-    vendors: list[str], criteria: list[str], response: Any
+    vendors: list[str], criteria: list[str], text: str
 ) -> ComparisonResult:
-    """Parse a model response into a fully-populated ComparisonResult."""
-    text = "".join(
-        block.text
-        for block in response.content
-        if getattr(block, "type", None) == "text"
-    )
+    """Parse model output text into a fully-populated ComparisonResult."""
     payload = _extract_json(text)
     if payload is None:
         logger.warning("Comparison Agent returned no parseable JSON")

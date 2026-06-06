@@ -64,7 +64,10 @@ def _project() -> ProjectContext:
 async def test_comparison_agent_handles_refusal(
     monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
-    monkeypatch.setattr(comparison, "get_anthropic_client", lambda: _FakeClient())
+    # The Comparison agent now routes through the provider-agnostic wrapper; the
+    # refusal originates in the wrapper's native Anthropic path (default
+    # provider), so patch the client the wrapper uses.
+    monkeypatch.setattr("app.agents.llm.get_anthropic_client", lambda: _FakeClient())
 
     with caplog.at_level(logging.WARNING):
         result = await comparison.run_comparison_agent(
