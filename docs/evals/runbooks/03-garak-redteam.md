@@ -84,7 +84,15 @@ per-probe pass-rate; a higher pass-rate = more attacks resisted._
 Logged to `../ISSUES-LOG.md`: #11 (garak reads `NIM_API_KEY`, not
 `NVIDIA_API_KEY`), #12 (10×-per-prompt repetition vs. the 40 rpm free tier),
 #13 (no native target-system-prompt → custom generator; and the
-`sysprompt_extraction` probe brings its own prompts).
+`sysprompt_extraction` probe brings its own prompts), #14 (a stalled free-tier
+connection froze the whole sweep for ~80 min — garak has no read timeout and
+uncapped retries, and `timeout` is suppressed by default; the custom generator
+now un-suppresses and pins a 120s per-request timeout, `GARAK_REQUEST_TIMEOUT`
+to tune).
+
+> **If a run hangs:** it's almost certainly a stalled connection. The 120s
+> timeout now bounds it; lower `GARAK_REQUEST_TIMEOUT` (e.g. `export
+> GARAK_REQUEST_TIMEOUT=60`) on a flaky tier so stalls fail fast and retry.
 
 ## Rollback
 

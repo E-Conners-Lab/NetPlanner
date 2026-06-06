@@ -44,9 +44,29 @@ class AdvisorNIM(NVOpenAIChat):
 
     generator_family_name = "AdvisorNIM"
 
+    # Free-tier connections can stall with no response; garak retries timeouts
+    # with no max_tries cap and the OpenAI client's default read timeout is 600s,
+    # so one dead socket freezes the whole sweep for ~10 min before it even
+    # retries (ISSUES-LOG #14). Set a short per-request timeout so a stall fails
+    # fast and garak's backoff reconnects. ``timeout`` is suppressed by default
+    # on the NIM generator, so it must also be removed from suppressed_params or
+    # garak strips it from the create() call.
+    _DEFAULT_TIMEOUT_S = 120.0
+    DEFAULT_PARAMS = NVOpenAIChat.DEFAULT_PARAMS | {
+        "timeout": _DEFAULT_TIMEOUT_S,
+        "suppressed_params": NVOpenAIChat.DEFAULT_PARAMS["suppressed_params"]
+        - {"timeout"},
+    }
+
     def __init__(self, name: str = "", config_root=_config) -> None:
         super().__init__(name, config_root=config_root)
         self._advisor_system_prompt = self._load_system_prompt()
+        # Set the per-request timeout deterministically (garak's config
+        # precedence can otherwise override DEFAULT_PARAMS). Env-overridable for
+        # tuning without editing the plugin.
+        self.timeout = float(
+            os.environ.get("GARAK_REQUEST_TIMEOUT", self._DEFAULT_TIMEOUT_S)
+        )
 
     @staticmethod
     def _load_system_prompt() -> str:
