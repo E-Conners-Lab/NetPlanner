@@ -49,3 +49,7 @@ build/
 
 # --- Local-only docs (not part of the published project) ---
 docs/netplanner-playground.html
+
+# Phase 3 garak red-team (isolated env + bulky raw reports)
+.garak-venv/
+docs/evals/redteam/reports/
