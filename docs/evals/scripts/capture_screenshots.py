@@ -100,10 +100,18 @@ async def main() -> None:
 
         await page.screenshot(path=str(OUT / "nemotron-advisor.png"), full_page=True)
 
-        # Cleaner hero crop: scroll the *message list* (px-5, not the textarea) to
-        # the top so the user's question + the start of the answer are in frame.
-        await page.eval_on_selector(
-            ".overflow-y-auto.px-5", "el => { el.scrollTop = 0; }"
+        # Hero crop: scroll the conversation to the TOP so the user's question +
+        # the start of Nemotron's answer + the NetPlanner chrome are all in frame.
+        # Find the scrollable ancestor of the first message rather than guessing a
+        # class (the textarea is also overflow-y-auto).
+        await page.evaluate(
+            """() => {
+                const el = document.querySelector('.advisor-md');
+                if (!el) return;
+                let p = el.parentElement;
+                while (p && p.scrollHeight <= p.clientHeight) p = p.parentElement;
+                if (p) p.scrollTop = 0;
+            }"""
         )
         await asyncio.sleep(0.8)
         await page.screenshot(path=str(OUT / "nemotron-advisor-hero.png"))
