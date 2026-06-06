@@ -41,7 +41,7 @@ commands and real issues as that phase runs, not pre-written.
 
 | Phase | Runbook | Deliverable | Status |
 |---|---|---|---|
-| 0 · Setup | [`runbooks/00-nvidia-setup.md`](runbooks/00-nvidia-setup.md) | Scoped NVIDIA key + Nemotron-first model shortlist | ⬜ not started |
+| 0 · Setup | [`runbooks/00-nvidia-setup.md`](runbooks/00-nvidia-setup.md) | Scoped NVIDIA key + Nemotron-first model shortlist | ✅ done (2026-06-05) |
 | 1 · Provider layer | [`runbooks/01-litellm-provider-layer.md`](runbooks/01-litellm-provider-layer.md) | LiteLLM abstraction behind the agent client | ⬜ not started |
 | 2 · Accuracy eval | [`runbooks/02-nemo-evaluator.md`](runbooks/02-nemo-evaluator.md) | NeMo Evaluator scores: Nemotron vs Claude baseline | ⬜ not started |
 | 3 · Red-team | [`runbooks/03-garak-redteam.md`](runbooks/03-garak-redteam.md) | garak report on the Advisor agent | ⬜ not started |
