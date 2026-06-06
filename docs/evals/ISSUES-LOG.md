@@ -16,6 +16,9 @@ Format mirrors `docs/RUNBOOK.md` §7: symptom → cause → fix.
 | 4 | 2026-06-05 | 2a | First live NVIDIA run failed: `NVIDIA_API_KEY is required` even though the key was in `.env` | The key was added to the **repo-root** `.env` in Phase 0, but the backend reads `backend/.env` (its `env_file` is relative to the backend CWD) | Moved the key into `backend/.env` (where `ANTHROPIC_API_KEY` already lives) | ⚠️ Minor but relatable: "config location bites — 'it's in my .env' isn't enough; it has to be in the .env the process actually reads." |
 | 5 | 2026-06-05 | 2a | `python scripts/eval_compare.py` → `ModuleNotFoundError: app` | Plain script runs don't get the backend dir on `sys.path` (pytest's `pythonpath` only applies under pytest) | `sys.path.insert(0, backend_dir)` at the top of the script | Minor tooling gotcha; not post-worthy on its own. |
 | 6 | 2026-06-05 | 2a | Live Advisor on Nemotron returned **no answer** — just "(Research budget reached)" — on a framing/ROI question Claude answers directly | Nemotron is **much more eager to call the `research` tool**: it chose to research 4 rounds straight (hitting the tool-loop cap) instead of answering. Same question + "do not look anything up" → clean 1-round answer. Threading is correct; it's a model **tool-use propensity** difference | For the demo, phrase the question to avoid a price lookup. Product follow-up: when the tool budget is hit, the Advisor should emit a partial answer, not just the budget notice | ✅ **Strong finding** — "swapping models isn't just quality; *tool-use propensity* changes. An agent tuned for one model's restraint can loop forever on another. Your tool-loop budget + guardrails are model-dependent." |
+| 7 | 2026-06-05 | 2b | NeMo Evaluator is a deployable microservice (Helm/Docker), not a pip install — too heavy to stand up on a laptop just to score 2 saved pairs | The microservice is built for managed, repeatable eval *jobs* at scale; for a `data`-task LLM-as-judge the inference runs on a remote endpoint regardless, so the platform adds ops overhead without changing the scores here | Took the spec's blessed fallback (SPEC §8): a thin LLM-as-judge script (`app/evals/judge.py` + `scripts/eval_judge.py`) running the **identical rubric** against the same pairs. Rubric + fixtures unchanged → scores stay comparable. Microservice deferred, not abandoned | ⚠️ Relatable: "the heaviest tool isn't always the right-sized tool. The rubric *is* the eval — the microservice is just one runner for it. Match infra weight to the job." |
+| 8 | 2026-06-05 | 2b | The judge **inverted** the intuitive ranking: it scored Claude's accuracy **3/5** and Nemotron's **4/5** | Claude elaborated beyond the supplied research (plausible AI/assurance detail the fixture never contained); the judge counts un-grounded specifics against `cell_accuracy`. Nemotron stayed grounded and scored higher (its one lost point: marking some AI cells "Not available" where the research arguably implied a tiered feature) | None needed — this is the result. Numerically confirms the 2a qualitative read | ✅ **Strong finding** — "an eval gate disagrees with the 'more verbose, more knowledgeable = better' prior. For a *grounded-synthesis* task, the reasoning model's restraint scored higher than the baseline's domain elaboration. This is exactly why AI-4 is a gate, not a vibe." |
+| 9 | 2026-06-05 | 2b | A live re-run **flaked on the Claude pair only**: `JudgeParseError: No JSON object found`. Nemotron scored fine the same run; a third run scored Claude cleanly (3/5/5 again, reproducible) | The judge (Qwen) is a reasoning model — it spends tokens on a `<think>` block before the JSON. The longer/more-verbose Claude matrix pushed the answer past the 1024-token cap, so the reply got truncated before the JSON object. Free-tier sampling is also non-deterministic | Bumped the judge `max_tokens` 1024→2048 (headroom to finish the JSON after reasoning) and added a small retry on `JudgeParseError` (a fresh sample usually lands). The parser already fails loud rather than emitting a NaN | ✅ **Good beat** — "the same reasoning-model gotcha that bit the *agent* (Finding #1) bites the *judge*: chain-of-thought eats your token budget. Reasoning judges need headroom + a retry, and a strict parser so a flake fails loudly instead of poisoning the scorecard." |
 
 <!-- Append rows below. Keep the example row for format reference. -->
 
@@ -60,6 +63,18 @@ cells), with honest `estimated` tagging throughout. Both produced complete,
 valid 3×4 matrices. Qualitatively, Nemotron held up well for this structured-
 synthesis task. Two small config findings (#4 wrong-`.env`, #5 script path).
 Results saved under `results/`. NeMo Evaluator scoring is 2b.
+
+**2b (LLM-as-judge scorecard):** the qualitative read got **numbers**. Ran the
+spec's thin-script fallback for NeMo Evaluator (#7) — identical three-criterion
+rubric, judged by `qwen/qwen3.5-122b-a10b` (a third family, distinct from both
+models under test, self-preference guarded). The headline (#8) inverted the
+"verbose = better" prior: **Nemotron out-scored the Claude baseline on cell
+accuracy (4/5 vs 3/5)** by staying grounded, while Claude lost a point for
+elaborating beyond the research. Both were perfect on completeness (5/5) and
+confidence honesty (5/5) — neither over-claimed `confirmed`. The decision now
+rests on a documented score, not a vibe: for grounded vendor synthesis,
+**Nemotron is viable** — and on this fixture, marginally *more* faithful than the
+incumbent. Scores: `results/campus-wifi__*__judge.json`.
 
 ### Phase 3 — Red-team
 _pending_

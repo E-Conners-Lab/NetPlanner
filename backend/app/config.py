@@ -51,6 +51,11 @@ class Settings(BaseSettings):
     # Catalog model id used for all NVIDIA-routed agents during the eval.
     # Override per-run (e.g. to the comparator) via NVIDIA_MODEL in .env.
     nvidia_model: str = "nvidia/nemotron-3-super-120b-a12b"
+    # Phase 2b LLM-as-judge model (NeMo-rubric fallback). A strong third-family
+    # model on NVIDIA's catalog, distinct from every model under test to avoid
+    # self-preference bias (SPEC §5). Verified live in Phase 0; override via
+    # NVIDIA_JUDGE_MODEL (never hardcode a catalog id in logic — they change).
+    nvidia_judge_model: str = "qwen/qwen3.5-122b-a10b"
 
     # --- Authentication (SEC-01 / SEC-14 / SEC-16) -------------------------
     # JWT signing secret. Empty in dev means a generated per-process key —

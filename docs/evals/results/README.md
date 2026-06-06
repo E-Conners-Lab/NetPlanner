@@ -8,9 +8,13 @@ apples-to-apples comparison.
 Reproduce (from `backend/`):
 
 ```bash
-uv run python scripts/eval_compare.py                 # both providers
+uv run python scripts/eval_compare.py                 # both providers (2a)
 uv run python scripts/eval_compare.py --fixture campus-wifi
+uv run python scripts/eval_judge.py                   # LLM-as-judge scores (2b)
 ```
+
+File naming: `<fixture>__<provider>.json` are the raw Comparison outputs;
+`<fixture>__<provider>__judge.json` are the Phase 2b LLM-as-judge verdicts.
 
 ## Phase 2a — `campus-wifi` (2026-06-05)
 
@@ -25,10 +29,32 @@ provider layer (not a mock).
 | Failure modes seen | none | none |
 
 Qualitatively, Nemotron held up well on this structured-synthesis task. The
-numeric LLM-as-judge scoring (NeMo Evaluator) is Phase 2b — see
-[`../runbooks/02-nemo-evaluator.md`](../runbooks/02-nemo-evaluator.md).
+numeric LLM-as-judge scoring is Phase 2b, below.
 
 Raw outputs: `campus-wifi__anthropic.json`, `campus-wifi__nvidia_nim.json`.
+
+## Phase 2b — LLM-as-judge scorecard (2026-06-05)
+
+The 2a qualitative read, scored. NeMo Evaluator's microservice was disproportionate
+for two saved pairs, so we ran the spec's blessed fallback (SPEC §8): the
+**identical rubric** via `scripts/eval_judge.py`, judged by `qwen/qwen3.5-122b-a10b`
+— a third family, distinct from both models under test (no self-preference bias).
+See [`../runbooks/02-nemo-evaluator.md`](../runbooks/02-nemo-evaluator.md).
+
+| Model | Cell accuracy | Completeness | Confidence honesty |
+|---|---|---|---|
+| `claude-sonnet-4-6` (baseline) | 3/5 | 5/5 | 5/5 |
+| `nvidia/nemotron-3-super-120b-a12b` (hero) | **4/5** | 5/5 | 5/5 |
+
+**The result inverted the "verbose = better" prior.** The judge docked Claude an
+accuracy point for *inventing* AI/assurance detail the research input never
+supplied, and rewarded Nemotron for staying grounded. Both were perfect on
+completeness and confidence honesty — neither over-claimed `confirmed`. For this
+grounded-synthesis task the eval gate says **Nemotron is viable, and marginally
+more faithful than the incumbent**.
+
+Raw verdicts (with per-criterion judge rationales):
+`campus-wifi__anthropic__judge.json`, `campus-wifi__nvidia_nim__judge.json`.
 
 ## Phase 2a — the live app on Nemotron (screenshots)
 
