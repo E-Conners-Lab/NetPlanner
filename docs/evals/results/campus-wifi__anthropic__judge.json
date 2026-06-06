@@ -1,0 +1,20 @@
+{
+  "fixture": "campus-wifi",
+  "provider": "anthropic",
+  "model": "claude-sonnet-4-6",
+  "judge_model": "qwen/qwen3.5-122b-a10b",
+  "scores": {
+    "cell_accuracy": {
+      "score": 3,
+      "rationale": "The output correctly captures the specific pricing figures and licensing models from the input, but it invents detailed AI/assurance feature descriptions and comparative marketing assessments that are not present in the provided research text."
+    },
+    "completeness": {
+      "score": 5,
+      "rationale": "Every vendor and criterion cell is present and contains substantive information derived from the input or logically inferred to fill the matrix structure."
+    },
+    "confidence_honesty": {
+      "score": 5,
+      "rationale": "The agent correctly tagged all cells as 'estimated' and avoided 'confirmed' tags, accurately reflecting the unofficial and placeholder nature of the source data provided in the input."
+    }
+  }
+}

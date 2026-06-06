@@ -1,0 +1,20 @@
+{
+  "fixture": "campus-wifi",
+  "provider": "nvidia_nim",
+  "model": "nvidia/nemotron-3-super-120b-a12b",
+  "judge_model": "qwen/qwen3.5-122b-a10b",
+  "scores": {
+    "cell_accuracy": {
+      "score": 4,
+      "rationale": "The matrix accurately reflects the provided pricing and licensing data, but it incorrectly marks AI/assurance features as 'Not available' for Cisco Meraki and Aruba Central despite the research input explicitly stating that Juniper Mist's AI is included in 'higher subscription tiers,' implying a similar tiered structure exists for others or that the data simply lacks specific names rather than the feature's existence."
+    },
+    "completeness": {
+      "score": 5,
+      "rationale": "Every vendor and criterion intersection is present with substantive values derived from the input, and no cells were silently dropped or left as empty placeholders."
+    },
+    "confidence_honesty": {
+      "score": 5,
+      "rationale": "The agent correctly avoided using 'confirmed' tags for any cell, appropriately labeling all data points as 'estimated' or 'unavailable' in alignment with the unofficial nature of the research input."
+    }
+  }
+}
