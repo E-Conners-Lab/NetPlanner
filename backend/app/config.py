@@ -93,12 +93,32 @@ class Settings(BaseSettings):
     report_model: str = "claude-sonnet-4-6"
     research_model: str = "claude-sonnet-4-6"
 
+    # --- Advisor tool-use budget (eval Finding #6) -------------------------
+    # How many research rounds the Advisor may run before a forced,
+    # tools-disabled synthesis turn. Tool-use propensity is model-dependent —
+    # Nemotron loops the research tool where Claude answers directly — so the
+    # budget is per-provider. Anthropic/Claude keeps the original 4 rounds;
+    # NVIDIA is capped tighter. Override via *_MAX_TOOL_ROUNDS in .env.
+    advisor_max_tool_rounds: int = 4
+    nvidia_max_tool_rounds: int = 2
+
     @property
     def cors_origin_list(self) -> list[str]:
         """CORS origins as a clean list, splitting the comma-separated value."""
         return [
             origin.strip() for origin in self.cors_origins.split(",") if origin.strip()
         ]
+
+    def advisor_tool_rounds(self) -> int:
+        """Research-round budget for the active provider (eval Finding #6).
+
+        Dispatches on ``provider`` so a model with a heavier tool-use
+        propensity (Nemotron) is capped tighter than the baseline (Claude),
+        rather than sharing one global constant.
+        """
+        if self.provider == "nvidia_nim":
+            return self.nvidia_max_tool_rounds
+        return self.advisor_max_tool_rounds
 
     def require_anthropic_api_key(self) -> str:
         """Return the Anthropic API key, failing loud if it is unset (SEC-12).

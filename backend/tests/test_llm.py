@@ -167,6 +167,30 @@ def test_require_nvidia_api_key_returns_value() -> None:
     assert Settings(nvidia_api_key="nvapi-abc").require_nvidia_api_key() == "nvapi-abc"
 
 
+# --- per-provider Advisor tool-round budget (eval Finding #6) -----------------
+
+
+def test_advisor_tool_rounds_anthropic_default() -> None:
+    # Claude's default budget is unchanged (4 rounds).
+    assert Settings(provider="anthropic").advisor_tool_rounds() == 4
+
+
+def test_advisor_tool_rounds_nvidia_is_tighter() -> None:
+    # Nemotron over-researches (Finding #6) — capped tighter than Claude.
+    s = Settings(provider="nvidia_nim")
+    assert s.advisor_tool_rounds() == 2
+    assert (
+        s.advisor_tool_rounds() < Settings(provider="anthropic").advisor_tool_rounds()
+    )
+
+
+def test_advisor_tool_rounds_overridable_via_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("NVIDIA_MAX_TOOL_ROUNDS", "1")
+    assert Settings(provider="nvidia_nim").advisor_tool_rounds() == 1
+
+
 # --- tool schema translation --------------------------------------------------
 
 _NEUTRAL_TOOL = {
@@ -333,3 +357,89 @@ async def test_nvidia_tool_turn_plain_text_ends() -> None:
     assert text == "Just advice."
     assert result.stop == "end"
     assert result.tool_calls == []
+
+
+# --- allow_tools normalization (the graceful-cap synthesis turn) --------------
+
+
+def test_anthropic_allow_tools_true_omits_tool_choice() -> None:
+    # Production path must be byte-for-byte unchanged: no tool_choice param.
+    client = MagicMock()
+    client.messages.stream = MagicMock(return_value=MagicMock())
+    with (
+        patch.object(llm, "get_settings", return_value=_settings()),
+        patch.object(llm, "get_anthropic_client", return_value=client),
+    ):
+        llm.stream_tool_turn(
+            role="advisor",
+            system="sys",
+            messages=[],
+            tools=[_NEUTRAL_TOOL],
+            max_tokens=128,
+        )
+    _, kwargs = client.messages.stream.call_args
+    assert "tool_choice" not in kwargs
+
+
+def test_anthropic_allow_tools_false_sets_tool_choice_none() -> None:
+    client = MagicMock()
+    client.messages.stream = MagicMock(return_value=MagicMock())
+    with (
+        patch.object(llm, "get_settings", return_value=_settings()),
+        patch.object(llm, "get_anthropic_client", return_value=client),
+    ):
+        llm.stream_tool_turn(
+            role="advisor",
+            system="sys",
+            messages=[],
+            tools=[_NEUTRAL_TOOL],
+            max_tokens=128,
+            allow_tools=False,
+        )
+    _, kwargs = client.messages.stream.call_args
+    assert kwargs["tool_choice"] == {"type": "none"}
+
+
+async def test_nvidia_allow_tools_true_keeps_auto() -> None:
+    acompletion = AsyncMock(
+        return_value=_FakeOpenAIStream([_openai_chunk(finish="stop")])
+    )
+    with (
+        patch.object(
+            llm, "get_settings", return_value=_settings(provider="nvidia_nim")
+        ),
+        patch.object(llm.litellm, "acompletion", acompletion),
+    ):
+        async with llm.stream_tool_turn(
+            role="advisor",
+            system="sys",
+            messages=[{"role": "user", "content": "hi"}],
+            tools=[_NEUTRAL_TOOL],
+            max_tokens=128,
+        ) as turn:
+            _ = [chunk async for chunk in turn]
+    _, kwargs = acompletion.call_args
+    assert kwargs["tool_choice"] == "auto"
+
+
+async def test_nvidia_allow_tools_false_sets_tool_choice_none() -> None:
+    acompletion = AsyncMock(
+        return_value=_FakeOpenAIStream([_openai_chunk(finish="stop")])
+    )
+    with (
+        patch.object(
+            llm, "get_settings", return_value=_settings(provider="nvidia_nim")
+        ),
+        patch.object(llm.litellm, "acompletion", acompletion),
+    ):
+        async with llm.stream_tool_turn(
+            role="advisor",
+            system="sys",
+            messages=[{"role": "user", "content": "hi"}],
+            tools=[_NEUTRAL_TOOL],
+            max_tokens=128,
+            allow_tools=False,
+        ) as turn:
+            _ = [chunk async for chunk in turn]
+    _, kwargs = acompletion.call_args
+    assert kwargs["tool_choice"] == "none"
