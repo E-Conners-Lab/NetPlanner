@@ -13,6 +13,9 @@ Format mirrors `docs/RUNBOOK.md` §7: symptom → cause → fix.
 | 1 | 2026-06-05 | 0 | Nemotron smoke test returned chain-of-thought (`"The user says…"`) instead of `ready`; cut off mid-sentence | `nemotron-3-super-120b` is a **reasoning** model that emits thinking tokens; `max_tokens=16` truncated before the final answer | Give reasoning models generous `max_tokens`; plan a downstream step to strip thinking from the final content | ✅ Yes — "swapping a reasoning model into an app built around a non-reasoning one isn't a drop-in; the output shape changes." Strong post beat. |
 | 2 | 2026-06-05 | 0 | `deepseek-ai/deepseek-v4-pro` smoke test hung, `curl` returned HTTP 000 at 30s | Model cold-start / slow inference on the free dev tier (~40 rpm, shared capacity) | Swapped comparator to `deepseek-ai/deepseek-v4-flash` (clean 200); kept `qwen3.5-122b` as backup | ✅ Yes — "free tier ≠ uniform latency; pick models that actually respond, and budget for cold starts." Sets up the not-for-production caveat. |
 | 3 | 2026-06-05 | 1b | Non-streaming `<think>`-strip is easy; the **streaming** Advisor can't strip CoT the same way (tags span chunk boundaries) | Reasoning models emit chain-of-thought; the comparison agent buffers + strips, but a streamed turn yields tokens as they arrive | Yield only `delta.content`, skip `delta.reasoning_content` (works for models that separate CoT). Inline `<think>` in streamed `content` is a **known gap** — revisit in Phase 2 (buffer-and-strip, or non-streaming for reasoning models) | ✅ Yes — strong beat: "the provider abstraction that's invisible for one-shot calls *leaks* for streaming. Reasoning models force a real streaming-UX decision." |
+| 4 | 2026-06-05 | 2a | First live NVIDIA run failed: `NVIDIA_API_KEY is required` even though the key was in `.env` | The key was added to the **repo-root** `.env` in Phase 0, but the backend reads `backend/.env` (its `env_file` is relative to the backend CWD) | Moved the key into `backend/.env` (where `ANTHROPIC_API_KEY` already lives) | ⚠️ Minor but relatable: "config location bites — 'it's in my .env' isn't enough; it has to be in the .env the process actually reads." |
+| 5 | 2026-06-05 | 2a | `python scripts/eval_compare.py` → `ModuleNotFoundError: app` | Plain script runs don't get the backend dir on `sys.path` (pytest's `pythonpath` only applies under pytest) | `sys.path.insert(0, backend_dir)` at the top of the script | Minor tooling gotcha; not post-worthy on its own. |
+| 6 | 2026-06-05 | 2a | Live Advisor on Nemotron returned **no answer** — just "(Research budget reached)" — on a framing/ROI question Claude answers directly | Nemotron is **much more eager to call the `research` tool**: it chose to research 4 rounds straight (hitting the tool-loop cap) instead of answering. Same question + "do not look anything up" → clean 1-round answer. Threading is correct; it's a model **tool-use propensity** difference | For the demo, phrase the question to avoid a price lookup. Product follow-up: when the tool budget is hit, the Advisor should emit a partial answer, not just the budget notice | ✅ **Strong finding** — "swapping models isn't just quality; *tool-use propensity* changes. An agent tuned for one model's restraint can loop forever on another. Your tool-loop budget + guardrails are model-dependent." |
 
 <!-- Append rows below. Keep the example row for format reference. -->
 
@@ -48,7 +51,15 @@ thought. All normalized behind the wrapper; production Anthropic path byte-for-
 byte unchanged (235 tests green).
 
 ### Phase 2 — Accuracy eval
-_pending_
+**2a (live runs + screenshots):** the full Comparison agent runs **live on
+Nemotron** end-to-end through the provider layer — first real proof, not a mock.
+Side-by-side on the `campus-wifi` fixture (`scripts/eval_compare.py`): Claude is
+verbose and adds domain knowledge with heavy hedging; **Nemotron is concise and
+stays grounded in the supplied research** (even propagates source URLs into
+cells), with honest `estimated` tagging throughout. Both produced complete,
+valid 3×4 matrices. Qualitatively, Nemotron held up well for this structured-
+synthesis task. Two small config findings (#4 wrong-`.env`, #5 script path).
+Results saved under `results/`. NeMo Evaluator scoring is 2b.
 
 ### Phase 3 — Red-team
 _pending_

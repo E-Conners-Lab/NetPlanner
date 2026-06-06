@@ -1,0 +1,87 @@
+{
+  "fixture": "campus-wifi",
+  "provider": "nvidia_nim",
+  "model": "nvidia/nemotron-3-super-120b-a12b",
+  "result": {
+    "vendors": [
+      "Cisco Meraki",
+      "Juniper Mist",
+      "Aruba Central"
+    ],
+    "criteria": [
+      "licensing model",
+      "per-AP annual cost",
+      "cloud management",
+      "AI/assurance features"
+    ],
+    "matrix": {
+      "Cisco Meraki": {
+        "licensing model": {
+          "value": "Subscription-only, no perpetual option",
+          "source": "",
+          "confidence": "estimated"
+        },
+        "per-AP annual cost": {
+          "value": "$155 per AP per year",
+          "source": "https://example-reseller.test/meraki-mr46e",
+          "confidence": "estimated"
+        },
+        "cloud management": {
+          "value": "Cloud-managed via Meraki Dashboard",
+          "source": "",
+          "confidence": "estimated"
+        },
+        "AI/assurance features": {
+          "value": "Not available",
+          "source": "",
+          "confidence": "unavailable"
+        }
+      },
+      "Juniper Mist": {
+        "licensing model": {
+          "value": "Subscription-only",
+          "source": "",
+          "confidence": "estimated"
+        },
+        "per-AP annual cost": {
+          "value": "$130 per AP per year",
+          "source": "https://example-reseller.test/mist-ap45",
+          "confidence": "estimated"
+        },
+        "cloud management": {
+          "value": "Cloud-managed via Juniper Mist AI",
+          "source": "",
+          "confidence": "estimated"
+        },
+        "AI/assurance features": {
+          "value": "Marvis Virtual Network Assistant available in higher tiers",
+          "source": "",
+          "confidence": "estimated"
+        }
+      },
+      "Aruba Central": {
+        "licensing model": {
+          "value": "Subscription-based foundation license",
+          "source": "",
+          "confidence": "estimated"
+        },
+        "per-AP annual cost": {
+          "value": "$140 per AP per year",
+          "source": "https://example-reseller.test/aruba-ap635",
+          "confidence": "estimated"
+        },
+        "cloud management": {
+          "value": "Cloud-managed via Aruba Central",
+          "source": "",
+          "confidence": "estimated"
+        },
+        "AI/assurance features": {
+          "value": "Not available",
+          "source": "",
+          "confidence": "unavailable"
+        }
+      }
+    },
+    "summary": "All three vendors offer subscription-based licensing and cloud-managed Wi-Fi 6E access points with comparable per-AP annual costs ranging from $130 to $155. Juniper Mist includes its Marvis AI assistant in higher tiers, while Cisco Meraki and Aruba Central do not detail specific AI/assurance features in the available data. Organizations should consider the maturity of each vendor's AI capabilities and any additional licensing tiers needed for advanced assurance when making a decision."
+  }
+}

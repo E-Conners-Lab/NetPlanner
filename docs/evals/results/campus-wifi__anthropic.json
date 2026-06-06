@@ -1,0 +1,87 @@
+{
+  "fixture": "campus-wifi",
+  "provider": "anthropic",
+  "model": "claude-sonnet-4-6",
+  "result": {
+    "vendors": [
+      "Cisco Meraki",
+      "Juniper Mist",
+      "Aruba Central"
+    ],
+    "criteria": [
+      "licensing model",
+      "per-AP annual cost",
+      "cloud management",
+      "AI/assurance features"
+    ],
+    "matrix": {
+      "Cisco Meraki": {
+        "licensing model": {
+          "value": "Subscription-only (no perpetual option); per-AP annual or multi-year license required to unlock device functionality",
+          "source": "",
+          "confidence": "estimated"
+        },
+        "per-AP annual cost": {
+          "value": "Approximately $150\u2013$160 per AP per year for Wi-Fi 6E tier (list prices vary by tier and term length)",
+          "source": "",
+          "confidence": "estimated"
+        },
+        "cloud management": {
+          "value": "Meraki Dashboard \u2014 fully cloud-hosted, browser-based management; no on-premises controller required; API access available",
+          "source": "",
+          "confidence": "estimated"
+        },
+        "AI/assurance features": {
+          "value": "Includes RF optimization, anomaly detection, and network health insights within the Meraki Dashboard; AI-driven features are generally less prominently marketed than Juniper Mist's AI engine",
+          "source": "",
+          "confidence": "estimated"
+        }
+      },
+      "Juniper Mist": {
+        "licensing model": {
+          "value": "Subscription-based, tiered model; higher tiers (e.g., Premium Analytics tier) unlock AI and Marvis Virtual Network Assistant features",
+          "source": "",
+          "confidence": "estimated"
+        },
+        "per-AP annual cost": {
+          "value": "Approximately $120\u2013$140 per AP per year for Wi-Fi 6E tier at base subscription level (list prices vary by tier and volume)",
+          "source": "",
+          "confidence": "estimated"
+        },
+        "cloud management": {
+          "value": "Mist Cloud \u2014 fully cloud-native management portal with microservices architecture; REST API and Webhooks supported; no on-premises controller required",
+          "source": "",
+          "confidence": "estimated"
+        },
+        "AI/assurance features": {
+          "value": "Marvis Virtual Network Assistant (AI-driven conversational interface for root-cause analysis and anomaly detection) included in higher subscription tiers; widely regarded as a leading AI assurance offering in this segment",
+          "source": "",
+          "confidence": "estimated"
+        }
+      },
+      "Aruba Central": {
+        "licensing model": {
+          "value": "Subscription-based; tiered foundation and advanced licenses; perpetual hardware with separate subscription for cloud management and advanced features",
+          "source": "",
+          "confidence": "estimated"
+        },
+        "per-AP annual cost": {
+          "value": "Approximately $130\u2013$150 per AP per year for Wi-Fi 6E tier at foundation license level (list prices vary by tier and volume)",
+          "source": "",
+          "confidence": "estimated"
+        },
+        "cloud management": {
+          "value": "Aruba Central \u2014 cloud-hosted management platform supporting zero-touch provisioning, topology views, and REST API; hybrid on-premises gateway options also available",
+          "source": "",
+          "confidence": "estimated"
+        },
+        "AI/assurance features": {
+          "value": "AIOps capabilities included in Aruba Central Advanced tier; features include anomaly detection, user experience scoring, and AI-powered recommendations; depth of conversational AI is generally considered comparable to Mist but marketed differently",
+          "source": "",
+          "confidence": "estimated"
+        }
+      }
+    },
+    "summary": "All three vendors \u2014 Cisco Meraki, Juniper Mist, and Aruba Central \u2014 offer cloud-native Wi-Fi management with subscription-based licensing in a broadly similar per-AP annual cost range (roughly $120\u2013$160 for Wi-Fi 6E tiers, though actual pricing varies significantly by volume, tier, and negotiated contract). Juniper Mist is widely recognized for the depth of its AI assurance capabilities via Marvis Virtual Network Assistant, making it a strong choice for campuses prioritizing proactive, AI-driven troubleshooting. Cisco Meraki offers the most established and widely deployed cloud management dashboard with a large ecosystem and strong support network, but its AI features are less prominent. Aruba Central provides a competitive AIOps offering and flexible deployment options (including hybrid on-premises gateways), which may appeal to institutions with mixed infrastructure requirements. All pricing and feature details above are estimates based on secondary sources and general product knowledge; Northwind University should obtain formal quotes and verify current tier structures directly with each vendor before making a final decision."
+  }
+}
