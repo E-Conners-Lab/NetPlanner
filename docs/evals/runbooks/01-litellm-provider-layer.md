@@ -2,8 +2,8 @@
 
 **Phase:** 1 · **Goal:** route NetPlanner's agents to Anthropic **or** NVIDIA NIM
 through one abstraction, without breaking the Claude default.
-**Status:** 🟡 in progress — provider layer + Comparison agent done (2026-06-05);
-Advisor (streaming + tool loop) is the next sub-step.
+**Status:** ✅ done (2026-06-05) — provider layer + Comparison (1a) + Advisor
+streaming/tool port (1b). Live `provider=nvidia_nim` runs happen in Phase 2.
 
 ---
 
@@ -56,22 +56,32 @@ tool-call format, streaming event shape, and stop-reason enums.
 - [x] NVIDIA path unit-tested (LiteLLM `nvidia_nim/` model id, scoped key,
       `drop_params`, thinking-strip) — `llm.py` 100% covered; project total 93%.
 - [x] `litellm==1.87.1` pinned (SEC-30); `pip-audit` clean (SEC-29).
-- [ ] **Live** `provider=nvidia_nim` run of the Comparison agent on a real
-      fixture (deferred to Phase 2, where fixtures are built).
-- [ ] Advisor streams tokens and completes ≥1 tool-call round on Nemotron
-      (next sub-step — streaming + tool translation is the harder port).
+- [x] Advisor ported (1b): `stream_tool_turn()` + `format_tool_results()`
+      normalize streaming, tool-call shape, and stop reasons across providers.
+      Anthropic path tested through the wrapper; NVIDIA streaming/tool path tested
+      (fragment accumulation, content-filter→refusal, plain-text end). `llm.py`
+      99%, `advisor.py` 96%, 235 tests green.
+- [ ] **Live** `provider=nvidia_nim` runs (Comparison matrix + Advisor tool round)
+      on real fixtures — Phase 2, where fixtures are built. Revisit the streaming
+      chain-of-thought gap (Finding #3) there.
 
 ## What landed (2026-06-05)
 
 - `config.py`: `provider` flag (default `anthropic`), `nvidia_api_key`,
   `nvidia_model`, `require_nvidia_api_key()` fail-fast accessor.
-- `app/agents/llm.py`: provider-agnostic `complete()` + `LLMResult`; native
-  Anthropic path preserves `effort` + refusal semantics; NVIDIA path via LiteLLM
-  strips reasoning chain-of-thought (Finding #1).
-- `comparison.py`: now provider-agnostic — calls `complete(role="comparison", …)`,
-  reads `LLMResult.text` / `.refused`. No route or schema changes.
-- Refusal logging moved into the wrapper; `test_agent_refusal` re-pointed to the
-  new seam. Advisor + Research stay on the native path this PR.
+- `app/agents/llm.py`:
+  - `complete()` + `LLMResult` (one-shot, Comparison) — native Anthropic preserves
+    `effort` + refusal; NVIDIA via LiteLLM strips reasoning CoT (Finding #1).
+  - `stream_tool_turn()` + `ToolCall`/`TurnResult` + `format_tool_results()`
+    (streaming + tools, Advisor) — normalizes tool schema (`input_schema` vs
+    `function.parameters`), stream events, streamed tool-call fragments, and stop
+    reasons. Neutral tool spec (`NeutralTool`) translated per provider.
+- `comparison.py`: provider-agnostic via `complete()`. `advisor.py`:
+  provider-agnostic via `stream_tool_turn()`; tool execution + refusal policy stay
+  in the agent. No route or schema changes.
+- Refusal logging for one-shot moved into the wrapper; Advisor keeps its own
+  refusal→`AdvisorRefusalError` policy, fed by `TurnResult`. **Research** stays on
+  the native path (Anthropic-proprietary web search — out of eval scope).
 
 ## Issues encountered
 

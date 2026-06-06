@@ -16,9 +16,14 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncGenerator, Sequence
 
-from app.agents.client import get_anthropic_client
+from app.agents.llm import (
+    NeutralTool,
+    ToolCall,
+    TurnResult,
+    format_tool_results,
+    stream_tool_turn,
+)
 from app.agents.research import research
-from app.config import get_settings
 from app.schemas.project import ProjectContext
 from app.schemas.research import ResearchResult
 
@@ -52,31 +57,20 @@ REFUSAL_NOTICE = (
 )
 
 
-def _refusal_text(message: object) -> str:
-    """Best-effort extract of the raw blocked text, for diagnostic logging."""
-    parts = [
-        getattr(block, "text", "")
-        for block in getattr(message, "content", None) or []
-        if getattr(block, "type", None) == "text"
-    ]
-    return "".join(parts).strip()
-
-
-def _log_refusal(agent: str, message: object) -> None:
+def _log_refusal(agent: str, result: TurnResult) -> None:
     """Record a model safety refusal with its structured stop details.
 
     Logs the raw blocked text (truncated) server-side only (SEC-11) so an
     operator can see exactly what the provider returned without it ever
     reaching the client.
     """
-    details = getattr(message, "stop_details", None)
     logger.warning(
         "%s turn refused by the model safety classifier (stop_reason=refusal): "
         "category=%s explanation=%s raw=%r",
         agent,
-        getattr(details, "category", None),
-        getattr(details, "explanation", None),
-        _refusal_text(message)[:300],
+        result.refusal_category,
+        result.refusal_explanation,
+        result.refusal_text[:300],
     )
 
 
@@ -117,7 +111,7 @@ OpEx (recurring operating cost), cite specific pricing figures where you have \
 them, and include an ROI or risk-based narrative."""
 
 # PIS-19 — the single tool exposed to the Advisor. Description is unambiguous.
-_RESEARCH_TOOL = {
+_RESEARCH_TOOL: NeutralTool = {
     "name": "research",
     "description": (
         "Search the web for current vendor pricing, product specifications, "
@@ -125,7 +119,7 @@ _RESEARCH_TOOL = {
         "software. Call this whenever the user's question depends on current "
         "costs or pricing and you do not already have a sourced figure."
     ),
-    "input_schema": {
+    "parameters": {
         "type": "object",
         "properties": {
             "query": {
@@ -230,22 +224,14 @@ def _format_research(result: ResearchResult) -> str:
     return "\n".join(lines)
 
 
-async def _run_research_tools(tool_use_blocks: list) -> list[dict]:
-    """Execute every `research` tool call and build tool_result blocks."""
-    results: list[dict] = []
-    for block in tool_use_blocks:
-        query = ""
-        if isinstance(block.input, dict):
-            query = str(block.input.get("query", ""))
+async def _run_research_tools(tool_calls: list[ToolCall]) -> list[dict]:
+    """Execute every `research` tool call → provider-native tool-result messages."""
+    pairs: list[tuple[ToolCall, str]] = []
+    for call in tool_calls:
+        query = str(call.arguments.get("query", "")) if call.arguments else ""
         research_result = await research(query)
-        results.append(
-            {
-                "type": "tool_result",
-                "tool_use_id": block.id,
-                "content": _format_research(research_result),
-            }
-        )
-    return results
+        pairs.append((call, _format_research(research_result)))
+    return format_tool_results(pairs)
 
 
 async def stream_advisor_turn(
@@ -266,45 +252,33 @@ async def stream_advisor_turn(
     Yields:
         str: Response text chunks. The caller frames them as SSE events.
     """
-    client = get_anthropic_client()
-    settings = get_settings()
     system = _build_system(project_context, summary=summary)
     conversation: list[dict] = list(_select_recent(history))
 
     try:
         for _ in range(_MAX_TOOL_ROUNDS):
-            # The Anthropic SDK accepts plain dict literals for `tools` and
-            # `messages`; the precise TypedDicts add churn without extra safety.
-            async with client.messages.stream(
-                model=settings.advisor_model,
-                max_tokens=_MAX_TOKENS,
+            # Provider-agnostic streamed turn — the wrapper normalizes stream
+            # events, tool-call shape, and stop reasons across Anthropic / NIM.
+            async with stream_tool_turn(
+                role="advisor",
                 system=system,
-                tools=[_RESEARCH_TOOL],  # type: ignore[list-item]
-                thinking={"type": "disabled"},
-                output_config={"effort": "low"},
-                messages=conversation,  # type: ignore[arg-type]
-            ) as stream:
-                async for event in stream:
-                    if (
-                        event.type == "content_block_delta"
-                        and event.delta.type == "text_delta"
-                    ):
-                        yield event.delta.text
-                final = await stream.get_final_message()
+                messages=conversation,
+                tools=[_RESEARCH_TOOL],
+                max_tokens=_MAX_TOKENS,
+                effort="low",
+            ) as turn:
+                async for text in turn:
+                    yield text
+                result = await turn.result()
 
-            if final.stop_reason == "refusal":
-                _log_refusal("Advisor", final)
+            if result.stop == "refusal":
+                _log_refusal("Advisor", result)
                 raise AdvisorRefusalError
-            if final.stop_reason != "tool_use":
+            if result.stop != "tool_use":
                 return
 
-            tool_uses = [
-                b for b in final.content if getattr(b, "type", "") == "tool_use"
-            ]
-            conversation.append({"role": "assistant", "content": final.content})
-            conversation.append(
-                {"role": "user", "content": await _run_research_tools(tool_uses)}
-            )
+            conversation.append(result.assistant_message)  # type: ignore[arg-type]
+            conversation.extend(await _run_research_tools(result.tool_calls))
 
         # Tool-round budget exhausted — close the turn cleanly.
         yield "\n\n(Research budget reached for this turn.)"

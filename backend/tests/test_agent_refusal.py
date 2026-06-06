@@ -126,7 +126,11 @@ async def test_advisor_agent_raises_refusal_and_logs_raw(
 ) -> None:
     """A refusal raises AdvisorRefusalError (the route turns it into a clean notice)
     and logs the structured details + raw blocked text server-side."""
-    monkeypatch.setattr(advisor, "get_anthropic_client", lambda: _FakeStreamClient())
+    # The Advisor now streams through the provider-agnostic wrapper; the refusal
+    # surfaces from the wrapper's native Anthropic path, so patch its client.
+    monkeypatch.setattr(
+        "app.agents.llm.get_anthropic_client", lambda: _FakeStreamClient()
+    )
 
     with caplog.at_level(logging.WARNING):
         with pytest.raises(advisor.AdvisorRefusalError):
