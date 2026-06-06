@@ -28,7 +28,13 @@ import litellm
 RUBRIC_METRICS = ("cell_accuracy", "completeness", "confidence_honesty")
 
 _SCORE_MIN, _SCORE_MAX = 1, 5
-_JUDGE_MAX_TOKENS = 1024
+# Reasoning judges spend tokens on a <think> block before the JSON; a tight cap
+# truncates the answer mid-object (Finding #1, and the live flake in #9). Give
+# generous headroom so the JSON always lands.
+_JUDGE_MAX_TOKENS = 2048
+# Free-tier judging is non-deterministic — one reply may omit the JSON entirely.
+# Retry a small number of times before giving up on a pair (Finding #9).
+_JUDGE_ATTEMPTS = 2
 
 # Reasoning judges (e.g. Qwen) may wrap chain-of-thought in <think> tags; strip
 # it before JSON parsing (mirrors the agent path, Finding #1).
@@ -208,6 +214,7 @@ async def judge_pair(
     judge_model: str,
     api_key: str,
     max_tokens: int = _JUDGE_MAX_TOKENS,
+    attempts: int = _JUDGE_ATTEMPTS,
 ) -> JudgeScores:
     """Score one saved Comparison output with the LLM-as-judge.
 
@@ -215,18 +222,29 @@ async def judge_pair(
     ``temperature=0`` for reproducible scoring (NVIDIA's <70B guidance also
     recommends structured output to cut NaN rates; we request JSON and parse
     defensively). ``drop_params`` discards anything NIM does not understand.
+
+    Each attempt is a fresh sample: a reply that omits the JSON (the free-tier
+    flake in Finding #9) triggers a retry rather than failing the pair. The last
+    :class:`JudgeParseError` is re-raised once ``attempts`` are exhausted.
     """
-    response = await litellm.acompletion(
-        model=f"nvidia_nim/{judge_model}",
-        messages=[
-            {"role": "system", "content": JUDGE_SYSTEM},
-            {"role": "user", "content": build_judge_prompt(fixture, comparison)},
-        ],
-        max_tokens=max_tokens,
-        temperature=0,
-        api_key=api_key,
-        response_format={"type": "json_object"},
-        drop_params=True,
-    )
-    content = response.choices[0].message.content or ""
-    return parse_judge_response(content)
+    messages = [
+        {"role": "system", "content": JUDGE_SYSTEM},
+        {"role": "user", "content": build_judge_prompt(fixture, comparison)},
+    ]
+    last_error: JudgeParseError | None = None
+    for _ in range(max(1, attempts)):
+        response = await litellm.acompletion(
+            model=f"nvidia_nim/{judge_model}",
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=0,
+            api_key=api_key,
+            response_format={"type": "json_object"},
+            drop_params=True,
+        )
+        content = response.choices[0].message.content or ""
+        try:
+            return parse_judge_response(content)
+        except JudgeParseError as exc:
+            last_error = exc
+    raise last_error  # type: ignore[misc]  # loop runs ≥1×, so this is set

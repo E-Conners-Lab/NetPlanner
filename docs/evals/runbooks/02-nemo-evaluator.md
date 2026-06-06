@@ -78,7 +78,9 @@ uv run python scripts/eval_judge.py            # scores every saved results/ pai
 - **Settings:** `temperature=0` for reproducible scoring; structured JSON output
   requested (NVIDIA's <70B guidance) and parsed defensively; reasoning `<think>`
   stripped before parsing; out-of-range / missing scores raise rather than
-  silently becoming NaN.
+  silently becoming NaN. The judge gets generous `max_tokens` (2048) plus a
+  small retry, because a reasoning judge spends tokens on its `<think>` block
+  before the JSON and a tight cap truncates the answer (ISSUES-LOG #9).
 
 ## Results
 

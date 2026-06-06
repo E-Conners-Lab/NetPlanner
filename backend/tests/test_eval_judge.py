@@ -202,10 +202,47 @@ async def test_judge_pair_routes_through_nvidia_and_parses() -> None:
     assert kwargs["api_key"] == "nvapi-test"
     assert kwargs["temperature"] == 0
     assert kwargs["drop_params"] is True
+    # Reasoning judges need token headroom to finish the JSON after their
+    # <think> block (Finding #1 / #9) — the default must be generous.
+    assert kwargs["max_tokens"] >= 2048
     # AI-1: the rubric (system) precedes the untrusted content (user).
     assert kwargs["messages"][0]["role"] == "system"
     assert kwargs["messages"][0]["content"] == judge.JUDGE_SYSTEM
     assert kwargs["messages"][1]["role"] == "user"
+
+
+async def test_judge_pair_retries_on_unparseable_then_succeeds() -> None:
+    # Free-tier judges are non-deterministic: a first reply with no JSON should
+    # trigger a fresh attempt rather than failing the whole pair (Finding #9).
+    acompletion = AsyncMock(
+        side_effect=[
+            _judge_response("<think>still reasoning, ran out of room"),
+            _judge_response(_VALID_JUDGE_JSON),
+        ]
+    )
+    with patch.object(judge.litellm, "acompletion", acompletion):
+        scores = await judge.judge_pair(
+            fixture=_FIXTURE,
+            comparison=_COMPARISON,
+            judge_model="qwen/qwen3.5-122b-a10b",
+            api_key="nvapi-test",
+        )
+    assert scores.cell_accuracy.score == 5
+    assert acompletion.await_count == 2
+
+
+async def test_judge_pair_raises_after_exhausting_attempts() -> None:
+    acompletion = AsyncMock(return_value=_judge_response("no json here"))
+    with patch.object(judge.litellm, "acompletion", acompletion):
+        with pytest.raises(judge.JudgeParseError):
+            await judge.judge_pair(
+                fixture=_FIXTURE,
+                comparison=_COMPARISON,
+                judge_model="qwen/qwen3.5-122b-a10b",
+                api_key="nvapi-test",
+                attempts=2,
+            )
+    assert acompletion.await_count == 2
 
 
 # --- self-preference guard (spec: judge != model-under-test) ------------------
