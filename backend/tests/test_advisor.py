@@ -73,7 +73,7 @@ async def test_advisor_streams_text() -> None:
     client = MagicMock()
     client.messages.stream = MagicMock(return_value=stream)
 
-    with patch("app.agents.advisor.get_anthropic_client", return_value=client):
+    with patch("app.agents.llm.get_anthropic_client", return_value=client):
         text = await _collect([{"role": "user", "content": "Justify MIST"}], _CTX)
 
     assert text == "Frame it as a 5-year TCO."
@@ -110,7 +110,7 @@ async def test_advisor_invokes_research_tool() -> None:
     )
 
     with (
-        patch("app.agents.advisor.get_anthropic_client", return_value=client),
+        patch("app.agents.llm.get_anthropic_client", return_value=client),
         patch(
             "app.agents.advisor.research", AsyncMock(return_value=research_result)
         ) as mock_research,
@@ -126,7 +126,7 @@ async def test_advisor_error_yields_graceful_message() -> None:
     client = MagicMock()
     client.messages.stream = MagicMock(side_effect=RuntimeError("API down"))
 
-    with patch("app.agents.advisor.get_anthropic_client", return_value=client):
+    with patch("app.agents.llm.get_anthropic_client", return_value=client):
         text = await _collect([{"role": "user", "content": "hi"}], _CTX)
 
     assert "error occurred" in text.lower()

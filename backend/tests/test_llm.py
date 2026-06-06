@@ -165,3 +165,171 @@ def test_require_nvidia_api_key_raises_when_unset() -> None:
 
 def test_require_nvidia_api_key_returns_value() -> None:
     assert Settings(nvidia_api_key="nvapi-abc").require_nvidia_api_key() == "nvapi-abc"
+
+
+# --- tool schema translation --------------------------------------------------
+
+_NEUTRAL_TOOL = {
+    "name": "research",
+    "description": "Search pricing.",
+    "parameters": {"type": "object", "properties": {"query": {"type": "string"}}},
+}
+
+
+def test_to_anthropic_tools_uses_input_schema() -> None:
+    (tool,) = llm._to_anthropic_tools([_NEUTRAL_TOOL])
+    assert tool["input_schema"] == _NEUTRAL_TOOL["parameters"]
+    assert "parameters" not in tool
+
+
+def test_to_openai_tools_wraps_function() -> None:
+    (tool,) = llm._to_openai_tools([_NEUTRAL_TOOL])
+    assert tool["type"] == "function"
+    assert tool["function"]["name"] == "research"
+    assert tool["function"]["parameters"] == _NEUTRAL_TOOL["parameters"]
+
+
+# --- format_tool_results (provider-native threading) --------------------------
+
+
+def test_format_tool_results_anthropic_single_user_message() -> None:
+    call = llm.ToolCall(id="toolu_1", name="research", arguments={})
+    with patch.object(llm, "get_settings", return_value=_settings()):
+        msgs = llm.format_tool_results([(call, "result text")])
+    assert len(msgs) == 1
+    assert msgs[0]["role"] == "user"
+    assert msgs[0]["content"][0]["type"] == "tool_result"
+    assert msgs[0]["content"][0]["tool_use_id"] == "toolu_1"
+
+
+def test_format_tool_results_openai_one_tool_message_per_call() -> None:
+    c1 = llm.ToolCall(id="call_1", name="research", arguments={})
+    c2 = llm.ToolCall(id="call_2", name="research", arguments={})
+    with patch.object(
+        llm, "get_settings", return_value=_settings(provider="nvidia_nim")
+    ):
+        msgs = llm.format_tool_results([(c1, "a"), (c2, "b")])
+    assert [m["role"] for m in msgs] == ["tool", "tool"]
+    assert [m["tool_call_id"] for m in msgs] == ["call_1", "call_2"]
+
+
+# --- NVIDIA streamed tool turn (the Advisor on NIM) ---------------------------
+
+
+def _openai_chunk(
+    *,
+    content: str | None = None,
+    tool_call: object | None = None,
+    finish: str | None = None,
+) -> SimpleNamespace:
+    delta = SimpleNamespace(
+        content=content, tool_calls=[tool_call] if tool_call else None
+    )
+    return SimpleNamespace(choices=[SimpleNamespace(delta=delta, finish_reason=finish)])
+
+
+def _tc_fragment(index: int, *, id: str = "", name: str = "", args: str = ""):
+    return SimpleNamespace(
+        index=index,
+        id=id,
+        function=SimpleNamespace(name=name or None, arguments=args or None),
+    )
+
+
+class _FakeOpenAIStream:
+    def __init__(self, chunks: list) -> None:
+        self._chunks = chunks
+
+    def __aiter__(self):
+        return self._iter()
+
+    async def _iter(self):
+        for chunk in self._chunks:
+            yield chunk
+
+
+async def test_nvidia_tool_turn_streams_text_and_parses_tool_call() -> None:
+    chunks = [
+        _openai_chunk(content="Let me check. "),
+        _openai_chunk(tool_call=_tc_fragment(0, id="call_1", name="research")),
+        _openai_chunk(tool_call=_tc_fragment(0, args='{"query":')),
+        _openai_chunk(
+            tool_call=_tc_fragment(0, args='"AP price"}'), finish="tool_calls"
+        ),
+    ]
+    acompletion = AsyncMock(return_value=_FakeOpenAIStream(chunks))
+    with (
+        patch.object(
+            llm, "get_settings", return_value=_settings(provider="nvidia_nim")
+        ),
+        patch.object(llm.litellm, "acompletion", acompletion),
+    ):
+        async with llm.stream_tool_turn(
+            role="advisor",
+            system="sys",
+            messages=[{"role": "user", "content": "hi"}],
+            tools=[_NEUTRAL_TOOL],
+            max_tokens=128,
+        ) as turn:
+            text = "".join([chunk async for chunk in turn])
+            result = await turn.result()
+
+    assert text == "Let me check. "
+    assert result.stop == "tool_use"
+    assert result.tool_calls == [
+        llm.ToolCall(id="call_1", name="research", arguments={"query": "AP price"})
+    ]
+    # Provider-native assistant message carries the OpenAI tool_calls shape.
+    assert result.assistant_message["tool_calls"][0]["function"]["name"] == "research"
+    # OpenAI request shape: system folded into messages, openai-format tools.
+    _, kwargs = acompletion.call_args
+    assert kwargs["messages"][0] == {"role": "system", "content": "sys"}
+    assert kwargs["tools"][0]["type"] == "function"
+    assert kwargs["stream"] is True
+    assert kwargs["drop_params"] is True
+
+
+async def test_nvidia_tool_turn_content_filter_is_refusal() -> None:
+    chunks = [_openai_chunk(content="partial", finish="content_filter")]
+    acompletion = AsyncMock(return_value=_FakeOpenAIStream(chunks))
+    with (
+        patch.object(
+            llm, "get_settings", return_value=_settings(provider="nvidia_nim")
+        ),
+        patch.object(llm.litellm, "acompletion", acompletion),
+    ):
+        async with llm.stream_tool_turn(
+            role="advisor",
+            system="sys",
+            messages=[{"role": "user", "content": "hi"}],
+            tools=[_NEUTRAL_TOOL],
+            max_tokens=128,
+        ) as turn:
+            _ = "".join([chunk async for chunk in turn])
+            result = await turn.result()
+
+    assert result.stop == "refusal"
+
+
+async def test_nvidia_tool_turn_plain_text_ends() -> None:
+    chunks = [_openai_chunk(content="Just advice."), _openai_chunk(finish="stop")]
+    acompletion = AsyncMock(return_value=_FakeOpenAIStream(chunks))
+    with (
+        patch.object(
+            llm, "get_settings", return_value=_settings(provider="nvidia_nim")
+        ),
+        patch.object(llm.litellm, "acompletion", acompletion),
+    ):
+        async with llm.stream_tool_turn(
+            role="advisor",
+            system="sys",
+            messages=[{"role": "user", "content": "hi"}],
+            tools=[_NEUTRAL_TOOL],
+            max_tokens=128,
+        ) as turn:
+            text = "".join([chunk async for chunk in turn])
+            result = await turn.result()
+
+    assert text == "Just advice."
+    assert result.stop == "end"
+    assert result.tool_calls == []
