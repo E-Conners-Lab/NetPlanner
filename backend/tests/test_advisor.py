@@ -8,7 +8,10 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from app.agents.advisor import (
+    AdvisorRefusalError,
     _build_system,
     _select_recent,
     project_context_is_sufficient,
@@ -60,6 +63,37 @@ class _FakeStream:
 
 async def _collect(history: list[dict], context: ProjectContext) -> str:
     return "".join([chunk async for chunk in stream_advisor_turn(history, context)])
+
+
+def _tool_use_stream(text: str = "Looking that up. ") -> _FakeStream:
+    """A stream that ends by requesting the `research` tool."""
+    tool_block = SimpleNamespace(
+        type="tool_use", id="toolu_x", name="research", input={"query": "AP pricing"}
+    )
+    return _FakeStream(
+        [_delta(text)],
+        SimpleNamespace(stop_reason="tool_use", content=[tool_block]),
+    )
+
+
+def _settings_stub(rounds: int) -> SimpleNamespace:
+    """Stand-in for get_settings() exposing the per-provider round budget."""
+    return SimpleNamespace(advisor_tool_rounds=lambda: rounds)
+
+
+_RESEARCH = ResearchResult(
+    query="AP pricing",
+    results=[
+        ResearchItem(
+            vendor="Juniper",
+            product="AP45",
+            price_point="$130",
+            unit="per AP",
+            source_url="https://example.test",
+            confidence="estimated",
+        )
+    ],
+)
 
 
 # --- Streaming -------------------------------------------------------------
@@ -130,6 +164,84 @@ async def test_advisor_error_yields_graceful_message() -> None:
         text = await _collect([{"role": "user", "content": "hi"}], _CTX)
 
     assert "error occurred" in text.lower()
+
+
+# --- Graceful cap (Finding #6): exhausting the budget yields a real answer ---
+
+
+async def test_advisor_graceful_cap_synthesizes_answer_without_tools() -> None:
+    # Budget = 1 round. The model loops the tool that round, then the forced
+    # no-tools turn MUST synthesize a real answer from the research gathered —
+    # never the old dead-end "(Research budget reached)" notice.
+    synthesis = _FakeStream(
+        [_delta("Based on the research, AP45 at $130 is the better value.")],
+        SimpleNamespace(stop_reason="end_turn", content=[]),
+    )
+    client = MagicMock()
+    client.messages.stream = MagicMock(side_effect=[_tool_use_stream(), synthesis])
+
+    with (
+        patch("app.agents.llm.get_anthropic_client", return_value=client),
+        patch("app.agents.advisor.get_settings", return_value=_settings_stub(1)),
+        patch("app.agents.advisor.research", AsyncMock(return_value=_RESEARCH)),
+    ):
+        text = await _collect([{"role": "user", "content": "Which AP?"}], _CTX)
+
+    assert "the better value" in text
+    assert "budget reached" not in text.lower()
+    # Two model turns: one tool round, then the forced synthesis turn.
+    assert client.messages.stream.call_count == 2
+    # The final (synthesis) turn disabled tools so the model had to answer.
+    _, last_kwargs = client.messages.stream.call_args_list[-1]
+    assert last_kwargs["tool_choice"] == {"type": "none"}
+
+
+async def test_advisor_respects_round_budget_before_forcing_synthesis() -> None:
+    # Budget = 2 rounds: research runs exactly twice, then one no-tools turn.
+    synthesis = _FakeStream(
+        [_delta("Synthesized answer.")],
+        SimpleNamespace(stop_reason="end_turn", content=[]),
+    )
+    client = MagicMock()
+    client.messages.stream = MagicMock(
+        side_effect=[_tool_use_stream(), _tool_use_stream(), synthesis]
+    )
+    mock_research = AsyncMock(return_value=_RESEARCH)
+
+    with (
+        patch("app.agents.llm.get_anthropic_client", return_value=client),
+        patch("app.agents.advisor.get_settings", return_value=_settings_stub(2)),
+        patch("app.agents.advisor.research", mock_research),
+    ):
+        text = await _collect([{"role": "user", "content": "Which AP?"}], _CTX)
+
+    assert mock_research.await_count == 2
+    assert client.messages.stream.call_count == 3
+    assert "Synthesized answer." in text
+    assert "budget reached" not in text.lower()
+
+
+async def test_advisor_refusal_on_forced_synthesis_raises() -> None:
+    # If the forced synthesis turn is blocked by the safety classifier, the
+    # Advisor still surfaces the clean refusal path — not a dead-end notice.
+    refusal = _FakeStream(
+        [],
+        SimpleNamespace(
+            stop_reason="refusal",
+            stop_details=SimpleNamespace(category="cyber", explanation="blocked"),
+            content=[],
+        ),
+    )
+    client = MagicMock()
+    client.messages.stream = MagicMock(side_effect=[_tool_use_stream(), refusal])
+
+    with (
+        patch("app.agents.llm.get_anthropic_client", return_value=client),
+        patch("app.agents.advisor.get_settings", return_value=_settings_stub(1)),
+        patch("app.agents.advisor.research", AsyncMock(return_value=_RESEARCH)),
+        pytest.raises(AdvisorRefusalError),
+    ):
+        await _collect([{"role": "user", "content": "Which AP?"}], _CTX)
 
 
 # --- Helpers ---------------------------------------------------------------

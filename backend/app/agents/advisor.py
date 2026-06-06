@@ -24,6 +24,7 @@ from app.agents.llm import (
     stream_tool_turn,
 )
 from app.agents.research import research
+from app.config import get_settings
 from app.schemas.project import ProjectContext
 from app.schemas.research import ResearchResult
 
@@ -31,8 +32,6 @@ logger = logging.getLogger(__name__)
 
 # PIS-16 — conversation history hard cap.
 _MAX_HISTORY = 20
-# Bound the tool-use loop so the Advisor cannot research indefinitely.
-_MAX_TOOL_ROUNDS = 4
 _MAX_TOKENS = 4096
 
 
@@ -234,6 +233,40 @@ async def _run_research_tools(tool_calls: list[ToolCall]) -> list[dict]:
     return format_tool_results(pairs)
 
 
+def _raise_if_refused(result: TurnResult) -> None:
+    """Convert a model safety refusal into the clean Advisor refusal path."""
+    if result.stop == "refusal":
+        _log_refusal("Advisor", result)
+        raise AdvisorRefusalError
+
+
+async def _stream_one_turn(
+    system: str,
+    conversation: list[dict],
+    sink: list[TurnResult],
+    *,
+    allow_tools: bool,
+) -> AsyncGenerator[str, None]:
+    """Stream one provider turn, yielding text and stashing its TurnResult.
+
+    A turn's result is only available after its text is consumed, so it is
+    appended to ``sink`` (which the caller clears before each turn) rather than
+    returned — keeping the streaming loop flat.
+    """
+    async with stream_tool_turn(
+        role="advisor",
+        system=system,
+        messages=conversation,
+        tools=[_RESEARCH_TOOL],
+        max_tokens=_MAX_TOKENS,
+        effort="low",
+        allow_tools=allow_tools,
+    ) as turn:
+        async for text in turn:
+            yield text
+        sink.append(await turn.result())
+
+
 async def stream_advisor_turn(
     history: Sequence[dict[str, str]],
     project_context: ProjectContext,
@@ -254,34 +287,39 @@ async def stream_advisor_turn(
     """
     system = _build_system(project_context, summary=summary)
     conversation: list[dict] = list(_select_recent(history))
+    # Tool-round budget is per-provider (Finding #6): a model that over-uses the
+    # research tool is capped tighter than the baseline.
+    max_rounds = get_settings().advisor_tool_rounds()
+    sink: list[TurnResult] = []
 
     try:
-        for _ in range(_MAX_TOOL_ROUNDS):
+        for _ in range(max_rounds):
             # Provider-agnostic streamed turn — the wrapper normalizes stream
             # events, tool-call shape, and stop reasons across Anthropic / NIM.
-            async with stream_tool_turn(
-                role="advisor",
-                system=system,
-                messages=conversation,
-                tools=[_RESEARCH_TOOL],
-                max_tokens=_MAX_TOKENS,
-                effort="low",
-            ) as turn:
-                async for text in turn:
-                    yield text
-                result = await turn.result()
+            sink.clear()
+            async for text in _stream_one_turn(
+                system, conversation, sink, allow_tools=True
+            ):
+                yield text
+            result = sink[0]
 
-            if result.stop == "refusal":
-                _log_refusal("Advisor", result)
-                raise AdvisorRefusalError
+            _raise_if_refused(result)
             if result.stop != "tool_use":
                 return
 
             conversation.append(result.assistant_message)  # type: ignore[arg-type]
             conversation.extend(await _run_research_tools(result.tool_calls))
 
-        # Tool-round budget exhausted — close the turn cleanly.
-        yield "\n\n(Research budget reached for this turn.)"
+        # Tool-round budget exhausted. Instead of a dead-end notice, run one
+        # final turn with tools DISABLED so the model must synthesize an answer
+        # from the research already gathered (Finding #6) — the user always gets
+        # a real answer.
+        sink.clear()
+        async for text in _stream_one_turn(
+            system, conversation, sink, allow_tools=False
+        ):
+            yield text
+        _raise_if_refused(sink[0])
     except AdvisorRefusalError:
         # Let the route turn this into a clean "replace" event — never surface
         # the provider's raw block text to the user.

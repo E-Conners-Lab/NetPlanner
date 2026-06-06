@@ -233,19 +233,27 @@ class _AnthropicToolTurn:
         tools: list[dict],
         max_tokens: int,
         effort: str,
+        allow_tools: bool = True,
     ) -> None:
         # ``.stream()`` only builds the context manager (no I/O); the request
         # happens in __aenter__. Anthropic keeps `system` and `thinking` as
         # top-level params and disables thinking for the low-latency chat turn.
-        self._cm = client.messages.stream(  # type: ignore[attr-defined]
-            model=model,
-            max_tokens=max_tokens,
-            system=system,
-            tools=tools,
-            thinking={"type": "disabled"},
-            output_config={"effort": effort},
-            messages=messages,
-        )
+        kwargs: dict = {
+            "model": model,
+            "max_tokens": max_tokens,
+            "system": system,
+            "tools": tools,
+            "thinking": {"type": "disabled"},
+            "output_config": {"effort": effort},
+            "messages": messages,
+        }
+        # The graceful-cap synthesis turn forbids tool use so the model must
+        # answer from the research already gathered (Advisor Finding #6). When
+        # tools are allowed we omit `tool_choice` entirely — the production path
+        # is byte-for-byte unchanged.
+        if not allow_tools:
+            kwargs["tool_choice"] = {"type": "none"}
+        self._cm = client.messages.stream(**kwargs)  # type: ignore[attr-defined]
         self._stream: object | None = None
 
     async def __aenter__(self) -> _AnthropicToolTurn:
@@ -308,12 +316,16 @@ class _OpenAIToolTurn:
         tools: list[dict],
         max_tokens: int,
         api_key: str,
+        allow_tools: bool = True,
     ) -> None:
+        # ``tool_choice="none"`` forces the graceful-cap synthesis turn to answer
+        # without calling tools (Advisor Finding #6); ``"auto"`` is the normal
+        # path, unchanged.
         self._kwargs = {
             "model": model,
             "messages": [{"role": "system", "content": system}, *messages],
             "tools": tools,
-            "tool_choice": "auto",
+            "tool_choice": "auto" if allow_tools else "none",
             "stream": True,
             "max_tokens": max_tokens,
             "temperature": 0,
@@ -403,12 +415,17 @@ def stream_tool_turn(
     tools: list[NeutralTool],
     max_tokens: int,
     effort: str = "low",
+    allow_tools: bool = True,
 ) -> _AnthropicToolTurn | _OpenAIToolTurn:
     """Open a streamed, tool-capable turn against the active provider.
 
     Use as ``async with stream_tool_turn(...) as turn``: iterate ``turn`` for
     text chunks, then ``await turn.result()`` (inside the context) for the
     normalized :class:`TurnResult`.
+
+    Set ``allow_tools=False`` to forbid tool use for this turn (normalized to
+    Anthropic ``tool_choice={"type": "none"}`` / OpenAI ``tool_choice="none"``)
+    — used for the Advisor's graceful-cap synthesis turn (Finding #6).
     """
     settings = get_settings()
     if settings.provider == "nvidia_nim":
@@ -419,6 +436,7 @@ def stream_tool_turn(
             tools=_to_openai_tools(tools),
             max_tokens=max_tokens,
             api_key=settings.require_nvidia_api_key(),
+            allow_tools=allow_tools,
         )
     return _AnthropicToolTurn(
         get_anthropic_client(),
@@ -428,6 +446,7 @@ def stream_tool_turn(
         tools=_to_anthropic_tools(tools),
         max_tokens=max_tokens,
         effort=effort,
+        allow_tools=allow_tools,
     )
 
 
