@@ -1,0 +1,75 @@
+{
+  "name": "campus-wifi",
+  "description": "Synthetic Wi-Fi refresh comparison fixture. All pricing is invented for evaluation — not real vendor quotes. Research data is supplied directly so the Comparison agent runs on the model's reasoning alone (no live web search), making the Claude-vs-Nemotron comparison apples-to-apples.",
+  "project_context": {
+    "name": "Campus Wi-Fi Refresh",
+    "company": "Northwind University",
+    "description": "Replace 220 aging Wi-Fi 5 access points across 4 academic buildings with Wi-Fi 6E, cloud-managed, with strong assurance/AIOps tooling.",
+    "existing_infra": "220 legacy 802.11ac access points on an on-prem wireless controller; flat layer-2 design.",
+    "budget_ceiling": 400000
+  },
+  "vendors": ["Cisco Meraki", "Juniper Mist", "Aruba Central"],
+  "criteria": [
+    "licensing model",
+    "per-AP annual cost",
+    "cloud management",
+    "AI/assurance features"
+  ],
+  "research_data": [
+    {
+      "query": "Cisco Meraki Wi-Fi 6E access point pricing and licensing",
+      "results": [
+        {
+          "vendor": "Cisco Meraki",
+          "product": "MR46E (Wi-Fi 6E AP)",
+          "price_point": "$155",
+          "unit": "per AP per year (license)",
+          "source_url": "https://example-reseller.test/meraki-mr46e",
+          "confidence": "estimated"
+        },
+        {
+          "vendor": "Cisco Meraki",
+          "product": "Meraki Dashboard",
+          "price_point": "subscription-only, no perpetual option",
+          "unit": "licensing model",
+          "source_url": "",
+          "confidence": "estimated"
+        }
+      ]
+    },
+    {
+      "query": "Juniper Mist Wi-Fi 6E AP pricing licensing AI",
+      "results": [
+        {
+          "vendor": "Juniper Mist",
+          "product": "AP45 (Wi-Fi 6E AP)",
+          "price_point": "$130",
+          "unit": "per AP per year (subscription)",
+          "source_url": "https://example-reseller.test/mist-ap45",
+          "confidence": "estimated"
+        },
+        {
+          "vendor": "Juniper Mist",
+          "product": "Marvis Virtual Network Assistant",
+          "price_point": "included in higher subscription tiers",
+          "unit": "AI/assurance",
+          "source_url": "",
+          "confidence": "estimated"
+        }
+      ]
+    },
+    {
+      "query": "Aruba Central Wi-Fi 6E AP pricing licensing",
+      "results": [
+        {
+          "vendor": "Aruba Central",
+          "product": "AP-635 (Wi-Fi 6E AP)",
+          "price_point": "$140",
+          "unit": "per AP per year (foundation license)",
+          "source_url": "https://example-reseller.test/aruba-ap635",
+          "confidence": "estimated"
+        }
+      ]
+    }
+  ]
+}
