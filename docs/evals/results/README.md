@@ -29,3 +29,25 @@ numeric LLM-as-judge scoring (NeMo Evaluator) is Phase 2b — see
 [`../runbooks/02-nemo-evaluator.md`](../runbooks/02-nemo-evaluator.md).
 
 Raw outputs: `campus-wifi__anthropic.json`, `campus-wifi__nvidia_nim.json`.
+
+## Phase 2a — the live app on Nemotron (screenshots)
+
+The full NetPlanner app run with `provider=nvidia_nim` — the **Advisor streaming a
+real business-decision answer from Nemotron**, captured via Playwright
+(`../scripts/capture_screenshots.py`).
+
+![NetPlanner AI Advisor answering on Nemotron](../images/nemotron-advisor.png)
+
+Images in `../images/`:
+- `nemotron-advisor.png` — full Advisor answer (the hero shot; crop as needed)
+- `nemotron-advisor-hero.png` — viewport crop
+- `nemotron-advisor-empty.png` — Advisor empty state
+- `nemotron-dashboard.png` — project view
+
+**Finding #6 (the standout):** the first live Advisor run on Nemotron returned
+*no answer* — Nemotron chose to call the `research` tool four rounds straight
+(hitting the tool-loop cap) on a framing/ROI question that Claude answers
+directly. Same question + "do not look anything up" → a clean, single-round
+10k-char advisory answer. **Tool-use propensity is model-dependent** — an agent's
+tool-loop budget and guardrails tuned for one model can loop forever on another.
+The demo question is phrased to stay single-round; see [`../ISSUES-LOG.md`](../ISSUES-LOG.md).
