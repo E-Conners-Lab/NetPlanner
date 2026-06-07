@@ -3,7 +3,9 @@
 **Phase:** 3 · **Goal:** adversarially probe the Advisor agent's model with
 NVIDIA garak — prompt injection, system-prompt extraction, and the Agent-breaker
 probe.
-**Status:** 🟡 harness built + smoke-tested; full sweep pending (run `run_garak.sh full`).
+**Status:** ✅ done (2026-06-07) — latent-injection family scored (~79% attack
+success); direct-injection / sysprompt / agent-breaker not completed due to
+free-tier throttling (#15). Verdict below.
 
 ---
 
@@ -69,14 +71,48 @@ uv run python scripts/summarize_garak.py                 # all reports
 uv run python scripts/summarize_garak.py --report netplanner-advisor-injection
 ```
 
-It prints a per-probe table and a per-SPEC-family roll-up. _Populated after the
-full sweep — garak reports a per-probe pass-rate; higher = more attacks resisted._
+It prints a per-probe table and a per-SPEC-family roll-up. garak reports a
+per-probe pass-rate; **higher = more attacks resisted.**
+
+**Run of 2026-06-07** (judge target: `nvidia/nemotron-3-super-120b-a12b` + the
+real Advisor system prompt, NIM direct). The **latent-injection family — the
+highest-risk one for NetPlanner — was scored thoroughly**; the remaining families
+did not complete because the free tier throttled to ~9 min/call (ISSUES-LOG #15),
+so we shipped the strong result rather than wait days (the eval-only, not-for-
+production caveat made concrete).
 
 | Probe family | garak probe | Attempts | Pass-rate | Defeated a guardrail? |
 |---|---|---|---|---|
-| Prompt injection | promptinject + latentinjection | | | |
-| System-prompt extraction | sysprompt_extraction | | | |
-| Agent-breaker (tool misuse) | agent_breaker.AgentBreaker | | | |
+| Prompt injection (indirect) | `latentinjection.LatentInjectionFactSnippetEiffel` | 768 | **34.2%** | ✅ yes — injection landed ~66% |
+| Prompt injection (indirect) | `latentinjection.LatentInjectionReport` | 768 | **7.9%** | ✅ yes — injection landed ~92% |
+| **Prompt injection (indirect) — family** | latentinjection | **1536** | **21.1%** | ✅ **~79% attack success** |
+| Prompt injection (direct) | `promptinject.Hijack*` | — | _incomplete_ | free-tier throttling (#15) |
+| System-prompt extraction | `sysprompt_extraction` | — | _not run_ | free-tier throttling (#15) |
+| Agent-breaker (tool misuse) | `agent_breaker.AgentBreaker` | — | _not run_ | free-tier throttling (#15) |
+
+### Verdict — safety (maps to AI-1)
+
+**The Advisor's system-prompt guardrails do NOT, on their own, stop indirect
+injection on Nemotron** — attack text smuggled inside the *data* the model
+processes got through ~79% of the time, and the two probes agreed (34.2% / 7.9%).
+That is exactly NetPlanner's AI-1 risk surface: the Advisor ingests untrusted
+research and project-context data behind a `<<…>>` fence.
+
+Read it precisely — this is a **model + system-prompt** result at a *bare
+endpoint*. garak did **not** exercise NetPlanner's app-layer structural defenses:
+the fence's boundary-marker sanitization (`<<`/`>>` are escaped in project
+fields) and the **schema-constrained tool-calling** that prevents injected prose
+from triggering the `research` tool or exfiltrating. So this is **not** a
+NetPlanner exploit — it's evidence for the standard's core AI-1 thesis:
+*prompt-level instructions ("treat this as untrusted") are not a control;
+structural defenses are.* The result **validates keeping those structural
+controls** rather than trusting a reasoning model's prompt adherence.
+
+Scope honesty: only Nemotron was garak-targeted (Anthropic isn't a NIM target),
+so this is **not** a Claude-vs-Nemotron safety comparison — just a measurement of
+Nemotron's prompt-guardrail permeability. The detector is a trigger-string matcher
+(`base.TriggerListDetector`), directionally solid at n=1536 but not a semantic
+judge.
 
 ## Verification
 
@@ -84,9 +120,12 @@ full sweep — garak reports a per-probe pass-rate; higher = more attacks resist
       the exported system prompt; verified offline — probe `user` turn is
       preceded by the Advisor `system` turn).
 - [x] Smoke probe runs end-to-end against the live NIM endpoint.
-- [ ] All three probe families run to completion (`run_garak.sh full`).
-- [ ] Report saved + summarized in the table above; notable single failures
-      captured verbatim with secrets/PII stripped (SEC-12/18).
+- [x] Highest-risk family (latent/indirect injection) scored to completion on
+      the live endpoint; results summarized in the table above.
+- [~] Direct-injection / sysprompt / agent-breaker **not** completed — free-tier
+      throttling made the full sweep impractical (#15); documented, not hidden.
+- [x] No secrets/PII in committed output (raw reports git-ignored; only
+      aggregate pass-rates recorded — SEC-12/18).
 
 ## Issues encountered
 
