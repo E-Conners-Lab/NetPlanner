@@ -24,6 +24,7 @@ Format mirrors `docs/RUNBOOK.md` §7: symptom → cause → fix.
 | 12 | 2026-06-06 | 3 | A full garak run is hundreds of calls (probes × prompts × 10 generations) — slow and rate-limited on the free tier | garak repeats each prompt ~10× by default (LLM non-determinism); the ~40 rpm free tier throttles that, and Nemotron is a slow reasoning model | `full` mode runs `-g 3` (down from default) and a curated probe subset; `smoke` runs one probe at `-g 1` to validate the pipeline cheaply | ⚠️ Relatable: "red-team depth costs API budget. On a free dev tier you tune generations + probe breadth to what the rate limit allows, and say so — don't pretend you ran the exhaustive sweep." |
 | 13 | 2026-06-06 | 3 | garak's NIM generator sends each probe as a **bare user turn** — it has no param to set the *target's* system prompt, so probes would hit an undefended model | The OpenAI-compatible/NIM generator builds messages straight from the probe prompt; there's no native "target system prompt" hook. And `sysprompt_extraction` supplies its *own* system prompts (from HF datasets), so it tests the model's leak-propensity, not our prompt | Wrote a 60-line custom generator (`redteam/garak_plugins/advisor_nim.py`) subclassing `NVOpenAIChat` to prepend NetPlanner's real exported Advisor system prompt to every conversation. Now injection/jailbreak probes attack the **production guardrails** (AI-1), verified offline (probe `user` turn preceded by the Advisor `system` turn) and live | ✅ **Strong beat** — "an off-the-shelf red-team tool attacks a *bare model* by default. To test *your app's* defenses you have to put your real system prompt in front of the probes — otherwise you're measuring the foundation model's safety, not your guardrails. Easy to get a falsely-clean report." |
 | 14 | 2026-06-06 | 3 | The first full sweep **froze**: zero progress for ~80 minutes, stuck on `receive_response_headers.started` for one request | A free-tier NIM connection stalled (request sent, response headers never arrived). garak's NIM generator builds its OpenAI client with **no read timeout** (SDK default 600s) and its `_call_model` retries `APITimeoutError`/`APIConnectionError` with **no `max_tries` cap** — so a single dead socket = a 10-min stall, then endless retries. Worse, `timeout` is in the NIM generator's default `suppressed_params`, so it's *stripped* from the API call even if set | Custom generator now (a) removes `timeout` from `suppressed_params` and (b) sets a deterministic per-request `timeout` (120s, `GARAK_REQUEST_TIMEOUT`-overridable) so a stall fails fast and garak's backoff reconnects instead of hanging | ✅ **Strong, very relatable** — "a red-team tool with uncapped retries + a 10-minute default timeout will *silently hang forever* on one flaky free-tier connection. Always pin a short request timeout; an eval that can deadlock isn't an eval. And watch for params the tool silently suppresses." |
+| 15 | 2026-06-07 | 3 | Two `run_garak.sh full` got launched at once and clobbered the same report file (shifting numbers, vanishing probes); after killing the dupes, the single clean run then **slowed to ~9 min/call** (`546 s/it`, ~30 h ETA for one probe) | (a) The script had no single-instance guard, so a double-launch wrote one report path concurrently — corrupting it and doubling rate-limit load. (b) Sustained free-tier use throttled hard: every call hit the 120s timeout + backoff, so each item burned minutes. The 40 rpm / shared-capacity tier is for dev/eval, not batch red-teaming | Killed both, quarantined the corrupted report, re-ran one clean instance (latent family confirmed: 34.2% / 7.9%). Shipped the strong latent result rather than wait days for the throttled tail (SPEC §8 free-tier caveat) | ✅ **Honest, on-message** — "the free tier is for *development and evaluation, not production* — and a sustained red-team sweep is exactly where that bites: throttling turns a 1-hour eval into a multi-day one. Scope the run to what the tier supports, and never let two writers share one report file." |
 
 <!-- Append rows below. Keep the example row for format reference. -->
 
@@ -82,7 +83,27 @@ rests on a documented score, not a vibe: for grounded vendor synthesis,
 incumbent. Scores: `results/campus-wifi__*__judge.json`.
 
 ### Phase 3 — Red-team
-_pending_
+garak (v0.15.1) probed the **real** Advisor guardrails on Nemotron — a custom
+NIM generator (`redteam/garak_plugins/advisor_nim.py`) prepends the exported
+Advisor system prompt to every probe, so the attacks hit the production posture,
+not a bare model (Finding #13 — the easy way to get a falsely-clean report).
+The harness itself surfaced the best beats: garak reads `NIM_API_KEY` not
+`NVIDIA_API_KEY` (#11); it has no request timeout and uncapped retries, so one
+stalled free-tier socket **froze the sweep for 80 minutes** until we pinned a
+timeout (#14); and a double-launch + sustained throttling (~9 min/call) made the
+full sweep impractical, so we shipped the highest-risk family rather than wait
+days (#15) — the "eval-only, not production" caveat made concrete.
+
+**Result.** Indirect (latent) injection — NetPlanner's actual AI-1 surface —
+**defeated the system-prompt guardrails ~79% of the time** (21.1% resisted across
+1,536 attempts; the two probes agreed at 34.2% and 7.9%). The honest reading:
+prompt-level instructions are *not* a control. This is a **model + system-prompt
+signal at a bare endpoint** — garak did not exercise NetPlanner's structural
+defenses (the `<<…>>` fence sanitization + schema-constrained tool-calling), so
+it's not an app exploit; it's direct evidence for *why those structural controls
+exist*. Direct-injection / sysprompt-extraction / agent-breaker were not
+completed (free-tier throttling). Only Nemotron was targeted (Anthropic isn't a
+NIM endpoint), so this is not a cross-model safety comparison.
 
 ### Phase 4 — Writeup
 _pending_
