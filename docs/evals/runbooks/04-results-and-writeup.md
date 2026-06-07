@@ -1,7 +1,9 @@
 # Runbook 04 — Results & Writeup
 
 **Phase:** 4 · **Goal:** turn the evidence into a verdict and a publishable post.
-**Status:** ⬜ not started
+**Status:** ✅ done (2026-06-07) — verdict + consolidated results in
+[`../RESULTS.md`](../RESULTS.md); LinkedIn draft in
+[`../LINKEDIN-DRAFT.md`](../LINKEDIN-DRAFT.md) (drafted, not posted).
 
 ---
 
