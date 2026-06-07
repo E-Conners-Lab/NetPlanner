@@ -45,7 +45,7 @@ commands and real issues as that phase runs, not pre-written.
 | 1 · Provider layer | [`runbooks/01-litellm-provider-layer.md`](runbooks/01-litellm-provider-layer.md) | LiteLLM abstraction behind the agent client | ✅ done — Comparison + Advisor ported (2026-06-05) |
 | 2 · Accuracy eval | [`runbooks/02-nemo-evaluator.md`](runbooks/02-nemo-evaluator.md) | NeMo Evaluator scores: Nemotron vs Claude baseline | ✅ done — 2a live runs (`scripts/eval_compare.py`) + 2b LLM-as-judge scorecard (`scripts/eval_judge.py`); Nemotron 4/5 vs Claude 3/5 on cell accuracy |
 | 3 · Red-team | [`runbooks/03-garak-redteam.md`](runbooks/03-garak-redteam.md) | garak report on the Advisor agent | ✅ done — latent (indirect) injection defeated the prompt guardrails ~79% of the time on Nemotron; sysprompt/agent-breaker throttled out (free tier). Validates structural AI-1 controls over prompt-level ones |
-| 4 · Writeup | [`runbooks/04-results-and-writeup.md`](runbooks/04-results-and-writeup.md) | Results tables + LinkedIn draft | ⬜ not started |
+| 4 · Writeup | [`runbooks/04-results-and-writeup.md`](runbooks/04-results-and-writeup.md) | Results tables + LinkedIn draft | ✅ done — verdict + tables in [`RESULTS.md`](RESULTS.md); post in [`LINKEDIN-DRAFT.md`](LINKEDIN-DRAFT.md) (drafted, not posted) |
 | 5 · OpenRouter (optional) | [`runbooks/05-openrouter-byo-provider.md`](runbooks/05-openrouter-byo-provider.md) | OpenRouter spike for production BYO-provider — separate angle, not required for the core verdict | ⬜ stub |
 
 Full goals, scope, success criteria, and the identity/secrets table are in

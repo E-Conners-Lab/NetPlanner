@@ -106,4 +106,15 @@ completed (free-tier throttling). Only Nemotron was targeted (Anthropic isn't a
 NIM endpoint), so this is not a cross-model safety comparison.
 
 ### Phase 4 — Writeup
-_pending_
+Synthesized phases 0–3 into a verdict — **viable, with caveats** — in
+[`RESULTS.md`](RESULTS.md), with a copy-paste LinkedIn draft in
+[`LINKEDIN-DRAFT.md`](LINKEDIN-DRAFT.md) (drafted, not posted, per the launch-status
+note). Accuracy: Nemotron matched and slightly edged Claude on grounded synthesis
+(4/5 vs 3/5 cell accuracy, tied on completeness + confidence honesty). Behavior:
+not a drop-in — reasoning output shape and tool-use propensity both needed
+handling. Safety: system-prompt guardrails are ~79% permeable to indirect
+injection on Nemotron, which validates NetPlanner's *structural* AI-1 controls
+rather than condemning the model. The through-line for the post: *I eval-gated and
+red-teamed my own production agents with NVIDIA's own stack, against my own
+published Secure Build Standard* — and the scars (reasoning-model drop-in myth,
+model-dependent tool-use, the red-team deadlock) are the credible part.
