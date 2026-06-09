@@ -38,7 +38,7 @@ dependencies = [
     "bleach==6.4.0",
     # --- Authentication (SEC-01 / SEC-17) ----------------------------------
     # Argon2id password hashing (SEC-17, OWASP 2026 baseline).
-    "argon2-cffi==23.1.0",
+    "argon2-cffi==25.1.0",
     # JWT signing for the BFF httpOnly session cookie (SEC-01).
     # 2.13.0 fixes PYSEC-2026-175..179 (pip-audit / SEC-29).
     "PyJWT==2.13.0",
