@@ -25,11 +25,11 @@ dependencies = [
     "pydantic-settings==2.14.1",
     "python-dotenv==1.2.2",
     # --- AI layer ---
-    "anthropic==0.105.2",
+    "anthropic==0.107.1",
     # Provider-agnostic routing for the multi-provider eval (NVIDIA NIM via the
     # `nvidia_nim/` provider). The default path stays native Anthropic; LiteLLM
     # is only exercised when `provider=nvidia_nim`. Pinned exact (SEC-30).
-    "litellm==1.87.1",
+    "litellm==1.88.1",
     # --- PDF generation ---
     "weasyprint==68.1",
     "markdown==3.10.2",
