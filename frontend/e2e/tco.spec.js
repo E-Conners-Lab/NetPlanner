@@ -22,8 +22,12 @@ test('calculate a TCO scenario and save it', async ({ page }) => {
 
   await page.getByRole('button', { name: 'Calculate TCO' }).click();
 
-  // Results panel + recharts chart render.
-  await expect(page.getByText('Total Cost of Ownership')).toBeVisible();
+  // Results panel + recharts chart render. `exact` pins the total-badge
+  // label span; without it the substring also matches the wrapping div
+  // (label + amount) → strict-mode "2 elements" flake.
+  await expect(
+    page.getByText('Total Cost of Ownership', { exact: true })
+  ).toBeVisible();
   await expect(page.locator('.recharts-surface, svg').first()).toBeVisible();
 
   // Persist the scenario.
