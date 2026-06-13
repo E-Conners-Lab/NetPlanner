@@ -24,7 +24,9 @@ test('register → dashboard, logout → login, login → dashboard', async ({ p
   await page.getByRole('button', { name: 'Create account' }).click();
 
   await expect(page.getByRole('heading', { name: 'Dashboard' })).toBeVisible();
-  await expect(page.getByText(email)).toBeVisible(); // email shown in TopBar
+  // exact: the TopBar email span; the wrapping container also holds "Sign out",
+  // so a substring match could resolve to 2 elements (strict-mode flake).
+  await expect(page.getByText(email, { exact: true })).toBeVisible();
 
   // Logout
   await page.getByRole('button', { name: 'Sign out' }).click();
