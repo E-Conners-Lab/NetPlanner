@@ -8,7 +8,9 @@ export default defineConfig({
     host: true,
     proxy: {
       '/api': {
-        target: 'http://localhost:8000',
+        // Backend origin. Defaults to the local dev backend; override with
+        // VITE_API_PROXY (e.g. E2E runs the backend on a non-default port).
+        target: process.env.VITE_API_PROXY || 'http://localhost:8000',
         changeOrigin: true,
       },
     },
