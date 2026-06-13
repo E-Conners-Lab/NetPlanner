@@ -25,20 +25,20 @@ dependencies = [
     "pydantic-settings==2.14.1",
     "python-dotenv==1.2.2",
     # --- AI layer ---
-    "anthropic==0.105.2",
+    "anthropic==0.107.1",
     # Provider-agnostic routing for the multi-provider eval (NVIDIA NIM via the
     # `nvidia_nim/` provider). The default path stays native Anthropic; LiteLLM
     # is only exercised when `provider=nvidia_nim`. Pinned exact (SEC-30).
-    "litellm==1.87.1",
+    "litellm==1.88.1",
     # --- PDF generation ---
-    "weasyprint==68.1",
+    "weasyprint==69.0",
     "markdown==3.10.2",
     # Whitelist-based HTML sanitizer for Advisor-authored markdown rendered
     # into PDF reports (defends against <script>, javascript:, file://, etc.).
     "bleach==6.4.0",
     # --- Authentication (SEC-01 / SEC-17) ----------------------------------
     # Argon2id password hashing (SEC-17, OWASP 2026 baseline).
-    "argon2-cffi==23.1.0",
+    "argon2-cffi==25.1.0",
     # JWT signing for the BFF httpOnly session cookie (SEC-01).
     # 2.13.0 fixes PYSEC-2026-175..179 (pip-audit / SEC-29).
     "PyJWT==2.13.0",
