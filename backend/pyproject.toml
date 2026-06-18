@@ -14,7 +14,7 @@ dependencies = [
     "uvicorn[standard]==0.49.0",
     # Pinned >=1.0.1 to fix PYSEC-2026-161 (DoS via Content-Type header in
     # MultiPartParser). fastapi 0.136.1 supports starlette >=0.42,<1.1.
-    "starlette==1.2.1",
+    "starlette==1.3.1",
     # --- Database (async SQLite) ---
     "SQLAlchemy==2.0.49",
     "aiosqlite==0.22.1",
