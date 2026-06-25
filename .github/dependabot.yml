@@ -12,8 +12,15 @@ updates:
     open-pull-requests-limit: 5
     groups:
       frontend:
+        applies-to: version-updates
         patterns: ["*"]
         update-types: ["minor", "patch"]
+      # Security alerts bundle into ONE PR per ecosystem too. Without an
+      # explicit `applies-to: security-updates` group, Dependabot opens one
+      # PR *per alert* — the 15-alert sprawl this config is meant to tame.
+      frontend-security:
+        applies-to: security-updates
+        patterns: ["*"]
     # Frontend major-version upgrades are deliberate, hand-done, tested
     # tasks — not auto-PRs. Each entry below is a *recorded deferral*, not a
     # "forgot about it": the upgrade is understood and scheduled, but blocked
@@ -49,8 +56,12 @@ updates:
     open-pull-requests-limit: 5
     groups:
       backend:
+        applies-to: version-updates
         patterns: ["*"]
         update-types: ["minor", "patch"]
+      backend-security:
+        applies-to: security-updates
+        patterns: ["*"]
 
   - package-ecosystem: github-actions
     directory: /
@@ -58,4 +69,8 @@ updates:
       interval: weekly
     groups:
       actions:
+        applies-to: version-updates
+        patterns: ["*"]
+      actions-security:
+        applies-to: security-updates
         patterns: ["*"]
