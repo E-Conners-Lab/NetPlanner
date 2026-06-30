@@ -10,7 +10,7 @@ description = "NetPlanner backend — AI-powered network business decision-suppo
 requires-python = ">=3.12"
 dependencies = [
     # --- Web framework ---
-    "fastapi==0.138.1",
+    "fastapi==0.138.2",
     "uvicorn[standard]==0.49.0",
     # Pinned >=1.0.1 to fix PYSEC-2026-161 (DoS via Content-Type header in
     # MultiPartParser). 1.3.1 fixes GHSA-82w8-qh3p-5jfq (form() limit DoS) and
@@ -21,7 +21,7 @@ dependencies = [
     "SQLAlchemy==2.0.49",
     "aiosqlite==0.22.1",
     "alembic==1.18.5",
-    "greenlet==3.5.2",
+    "greenlet==3.5.3",
     # --- Validation / settings ---
     "pydantic==2.13.4",
     # 2.14.2 fixes GHSA-4xgf-cpjx-pc3j (NestedSecretsSettingsSource symlink
@@ -29,11 +29,11 @@ dependencies = [
     "pydantic-settings==2.14.2",
     "python-dotenv==1.2.2",
     # --- AI layer ---
-    "anthropic==0.112.0",
+    "anthropic==0.113.0",
     # Provider-agnostic routing for the multi-provider eval (NVIDIA NIM via the
     # `nvidia_nim/` provider). The default path stays native Anthropic; LiteLLM
     # is only exercised when `provider=nvidia_nim`. Pinned exact (SEC-30).
-    "litellm==1.89.4",
+    "litellm==1.90.1",
     # --- PDF generation ---
     "weasyprint==69.0",
     "markdown==3.10.2",
@@ -58,7 +58,7 @@ dev = [
     "pytest-asyncio==1.4.0",
     "pytest-cov==7.1.0",
     "httpx==0.28.1",
-    "ruff==0.15.19",
+    "ruff==0.15.20",
     "black==26.5.1",
     "isort==8.0.1",
     "mypy==2.1.0",
